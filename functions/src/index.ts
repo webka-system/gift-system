@@ -34,3 +34,7 @@ export const BUILD_ID = "2026-07-08-init-1";
 // 管理API: QRコード一括生成（種別指定で任意個数・トークンはサーバ側生成 / design.md 4.1）。
 // 認証：Firebase Auth IDトークン（requireAuth）。
 export { adminGenerateGiftCards } from "./http/admin-qr";
+
+// 受け取り者API: トークン照合でカードを引く / 商品選択＋住所確定（トランザクションで使用済み化）。
+// ログイン不要・トークンが唯一のアクセス制御（design.md 4.2 / 第8章）。
+export { receiveGetCard, receiveConfirm } from "./http/receive";

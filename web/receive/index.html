@@ -8,18 +8,69 @@
   <link rel="stylesheet" href="/receive/css/receive.css" />
 </head>
 <body>
-  <!--
-    受け取り者画面（ログイン不要 / トークンURLで着地 / design.md 4.2）。
-    URL 形式: /g/<token>（firebase.json hosting rewrites → /receive/index.html）。
-    実装予定: トークン照合 → 商品ラインナップ表示 → 商品選択 → 住所入力 → 確定 → 完了画面。
-    使用済みトークンは「使用済み」表示（二重利用防止）。
-    現状は初期セットアップの雛形。
-  -->
   <main class="app-shell">
-    <h1>ギフトの受け取り</h1>
-    <p class="muted">初期セットアップ完了。ここに受け取りフローを実装していきます。</p>
+
+    <!-- 読み込み中 -->
+    <section id="view-loading" class="view">
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="muted center">読み込んでいます…</p>
+    </section>
+
+    <!-- 無効なリンク（トークン不正・存在しない） -->
+    <section id="view-invalid" class="view" hidden>
+      <div class="notice">
+        <h1>リンクが無効です</h1>
+        <p>このリンクは正しくないか、有効期限が切れている可能性があります。お手元のギフトカードのQRコードを再度読み取ってください。</p>
+      </div>
+    </section>
+
+    <!-- 使用済み（二重利用防止） -->
+    <section id="view-used" class="view" hidden>
+      <div class="notice">
+        <h1>このギフトは使用済みです</h1>
+        <p>このQRコードはすでに商品選択・お届け先の登録が完了しています。ご不明な点がある場合はお問い合わせください。</p>
+      </div>
+    </section>
+
+    <!-- 商品選択＋住所入力 -->
+    <section id="view-select" class="view" hidden>
+      <header class="head">
+        <h1>ギフトをお選びください</h1>
+        <p id="card-type-name" class="muted"></p>
+      </header>
+
+      <form id="confirm-form">
+        <h2>1. 商品を1つ選択</h2>
+        <div id="product-list" class="product-list"><!-- 商品カードを動的描画 --></div>
+
+        <h2>2. お届け先を入力</h2>
+        <div class="address-form">
+          <label>お名前<input name="name" type="text" autocomplete="name" required /></label>
+          <label>郵便番号<input name="postalCode" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="1234567" required /></label>
+          <label>都道府県<input name="prefecture" type="text" autocomplete="address-level1" required /></label>
+          <label>住所（市区町村・番地）<input name="address" type="text" autocomplete="address-level2" required /></label>
+          <label>建物名・部屋番号（任意）<input name="building" type="text" autocomplete="off" /></label>
+          <label>電話番号<input name="phone" type="tel" inputmode="tel" autocomplete="tel" required /></label>
+        </div>
+
+        <p id="form-error" class="error" hidden></p>
+        <button id="confirm-btn" type="submit" class="primary">この内容で確定する</button>
+        <p class="muted small center">確定後は商品・お届け先の変更ができません。内容をご確認ください。</p>
+      </form>
+    </section>
+
+    <!-- 完了画面（即時の受付表示 / design.md 第7章） -->
+    <section id="view-done" class="view" hidden>
+      <div class="notice done">
+        <div class="check" aria-hidden="true">✓</div>
+        <h1>ご注文を受け付けました</h1>
+        <p class="lead">確認メールは追ってお送りします。</p>
+        <p class="muted">お届け先の登録が完了しました。商品の発送準備に入ります。このページは閉じていただいて構いません。</p>
+      </div>
+    </section>
+
   </main>
 
-  <!-- <script type="module" src="/receive/js/receive.js"></script> -->
+  <script type="module" src="/receive/js/receive.js"></script>
 </body>
 </html>

@@ -19,10 +19,41 @@ import {
   listCards, updateCardMemo, CARD_STATUS,
 } from "./db.js";
 import { uploadProductImage } from "./storage.js";
+import { TOKEN } from "/shared/constants.js";
 
 // ===== 小さなユーティリティ =====
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+// 読み込み中スピナー（CSS .spinner でアニメーション）。
+const SPINNER = `<span class="spinner" aria-hidden="true"></span>`;
+
+/** テーブルに「読み込み中…」行を表示（データ取得中）。 */
+function tableLoading(tbody, colspan) {
+  tbody.innerHTML = `<tr><td colspan="${colspan}" class="loading-cell">${SPINNER}読み込み中…</td></tr>`;
+}
+
+/** テーブルに「データがありません」系の空メッセージ行を表示（0件時）。 */
+function tableEmpty(tbody, colspan, msg) {
+  tbody.innerHTML = `<tr><td colspan="${colspan}" class="muted">${esc(msg)}</td></tr>`;
+}
+
+/** 結果表示欄に処理中インジケータ（スピナー＋メッセージ）を出す。 */
+function busy(el, msg) {
+  el.innerHTML = `${SPINNER}${esc(msg)}`;
+  el.classList.add("busy");
+}
+
+/** 結果表示欄の処理中インジケータを解除して最終メッセージにする（空文字で消去）。 */
+function busyDone(el, msg = "") {
+  el.textContent = msg;
+  el.classList.remove("busy");
+}
+
+/** 受け取り者用URL（PUBLIC_HOSTING_ORIGIN 相当 = 現在のオリジン + /g/<token>）。 */
+function receiveUrl(token) {
+  return `${location.origin}${TOKEN.URL_PREFIX}${token}`;
+}
 
 /** HTMLエスケープ（管理者入力の表示時XSS対策）。 */
 function esc(s) {
@@ -102,15 +133,34 @@ $("#login-form").addEventListener("submit", async (e) => {
 
 $("#logout-btn").addEventListener("click", () => logout());
 
-// タブ切替。
+// タブ切替。切り替えたら、そのタブのデータ取得を自動で開始する（開いたら勝手に最新が出る挙動に統一）。
 $$(".tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     const tab = btn.dataset.tab;
     $$(".tab-btn").forEach((b) => b.classList.toggle("active", b === btn));
     $$(".tab-panel").forEach((p) => { p.hidden = p.id !== `tab-${tab}`; });
-    if (tab === "products" || tab === "generate" || tab === "cards" || tab === "print") refreshTypeSelectors();
+    loadTab(tab);
   });
 });
+
+/**
+ * タブを開いた（表示された）タイミングで、そのタブが表示すべきデータを自動取得する。
+ * 種別セレクタを持つタブは最新の種別を取り直してから一覧を描画する。
+ */
+async function loadTab(tab) {
+  if (tab === "types") return renderCardTypes();
+  if (tab === "products") { await refreshTypes(); return renderProducts(); }
+  if (tab === "generate") return refreshTypes();
+  if (tab === "cards") { await refreshTypes(); return renderCards(); }
+  if (tab === "print") return refreshTypes();
+  // ne タブは開いた時点で取得するデータがない（操作起点のCSV/リトライのみ）。
+}
+
+/** 種別を取り直してキャッシュとセレクタを最新化する（selectors を持つ各タブの前処理）。 */
+async function refreshTypes() {
+  cardTypesCache = await listCardTypes();
+  refreshTypeSelectors();
+}
 
 // アプリ初期化（ログイン後）。
 let booted = false;
@@ -125,11 +175,13 @@ async function bootApp() {
 // カード種別
 // ============================================================
 async function renderCardTypes() {
-  cardTypesCache = await listCardTypes();
   const tbody = $("#types-tbody");
+  tableLoading(tbody, 5);
+  cardTypesCache = await listCardTypes();
+  refreshTypeSelectors();
   tbody.innerHTML = "";
   if (cardTypesCache.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="muted">まだ種別がありません。下のフォームから登録してください。</td></tr>`;
+    tableEmpty(tbody, 5, "まだ種別がありません。下のフォームから登録してください。");
     return;
   }
   for (const t of cardTypesCache) {
@@ -222,7 +274,7 @@ function wireForms() {
 async function onExportUrlXlsx() {
   const btn = $("#print-btn");
   btn.disabled = true;
-  $("#print-result").textContent = "Excel生成中…";
+  busy($("#print-result"), "Excel生成中…");
   try {
     const params = new URLSearchParams();
     const typeId = $("#print-type-select").value;
@@ -241,9 +293,9 @@ async function onExportUrlXlsx() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    $("#print-result").textContent = "Excelをダウンロードしました。";
+    busyDone($("#print-result"), "Excelをダウンロードしました。");
   } catch (err) {
-    $("#print-result").textContent = "";
+    busyDone($("#print-result"));
     flash(`Excel出力に失敗しました: ${err?.message || err}`, "error");
   } finally {
     btn.disabled = false;
@@ -270,14 +322,15 @@ async function renderProducts() {
   const cardTypeId = $("#product-type-select").value;
   const tbody = $("#products-tbody");
   if (!cardTypeId) {
-    tbody.innerHTML = `<tr><td colspan="5" class="muted">種別を選択してください。</td></tr>`;
+    tableEmpty(tbody, 5, "種別を選択してください。");
     return;
   }
+  tableLoading(tbody, 5);
   const products = await listProductsByType(cardTypeId);
   productsCache = products;
   tbody.innerHTML = "";
   if (products.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="muted">この種別にはまだ商品がありません。</td></tr>`;
+    tableEmpty(tbody, 5, "この種別にはまだ商品がありません。");
     return;
   }
   for (const p of products) {
@@ -352,7 +405,9 @@ async function onProductSubmit(e) {
   }
   const editingId = $("#product-id").value;
   const submitBtn = $("#product-submit");
+  const submitLabel = submitBtn.textContent;
   submitBtn.disabled = true;
+  submitBtn.textContent = "保存中…";
   try {
     const file = $("#product-image").files[0];
     const description = $("#product-desc").value.trim();
@@ -381,6 +436,8 @@ async function onProductSubmit(e) {
     flash(`商品の${editingId ? "更新" : "登録"}に失敗しました: ${err?.message || err}`, "error");
   } finally {
     submitBtn.disabled = false;
+    // 成功時は resetProductForm がラベルを戻しているので、失敗で残った「保存中…」だけ復元する。
+    if (submitBtn.textContent === "保存中…") submitBtn.textContent = submitLabel;
   }
 }
 
@@ -401,7 +458,7 @@ async function onGenerateSubmit(e) {
   }
   const btn = $("#generate-submit");
   btn.disabled = true;
-  $("#generate-result").textContent = "生成中…";
+  busy($("#generate-result"), "生成中…");
   try {
     const res = await authorizedFetch("/api/adminGenerateGiftCards", {
       method: "POST",
@@ -413,10 +470,10 @@ async function onGenerateSubmit(e) {
       const msg = data?.message || data?.code || `HTTP ${res.status}`;
       throw new Error(msg);
     }
-    $("#generate-result").textContent = `${data.created} 枚のQRカードを生成しました。`;
+    busyDone($("#generate-result"), `${data.created} 枚のQRカードを生成しました。`);
     flash(`${data.created} 枚を生成しました。`);
   } catch (err) {
-    $("#generate-result").textContent = "";
+    busyDone($("#generate-result"));
     flash(`生成に失敗しました: ${err?.message || err}`, "error");
   } finally {
     btn.disabled = false;
@@ -430,21 +487,26 @@ async function renderCards() {
   const cardTypeId = $("#cards-type-select").value || undefined;
   const status = $("#cards-status-select").value || undefined;
   const tbody = $("#cards-tbody");
-  tbody.innerHTML = `<tr><td colspan="6" class="muted">読み込み中…</td></tr>`;
+  tableLoading(tbody, 7);
   const cards = await listCards({ cardTypeId, status });
   const typeName = (id) => cardTypesCache.find((t) => t.id === id)?.name || id;
   tbody.innerHTML = "";
   if (cards.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="muted">該当するカードがありません。</td></tr>`;
+    tableEmpty(tbody, 7, "該当するカードがありません。");
     return;
   }
   for (const c of cards) {
     const used = c.status === CARD_STATUS.USED;
+    const url = receiveUrl(c.token);
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="mono small">${esc(c.token)}</td>
       <td>${esc(typeName(c.cardTypeId))}</td>
       <td>${used ? "<span class='badge badge-used'>使用済</span>" : "<span class='badge badge-unused'>未使用</span>"}</td>
+      <td class="url-cell">
+        <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>
+        <button class="copy-btn" data-act="copy-url" data-url="${esc(url)}" title="URLをコピー">コピー</button>
+      </td>
       <td>${fmtDate(c.usedAt)}</td>
       <td><input class="memo-input" data-id="${c.id}" value="${esc(c.memo)}" placeholder="受注番号など"></td>
       <td class="row-actions"><button data-act="save-memo" data-id="${c.id}">memo保存</button></td>`;
@@ -454,11 +516,29 @@ async function renderCards() {
 
 async function onCardsClick(e) {
   const btn = e.target.closest("button");
-  if (!btn || btn.dataset.act !== "save-memo") return;
-  const id = btn.dataset.id;
-  const input = $(`.memo-input[data-id="${id}"]`);
-  await updateCardMemo(id, input.value);
-  flash("memo を保存しました。");
+  if (!btn) return;
+  if (btn.dataset.act === "copy-url") {
+    try {
+      await navigator.clipboard.writeText(btn.dataset.url);
+      flash("URLをコピーしました。");
+    } catch (_) {
+      flash("コピーに失敗しました。URLを選択して手動でコピーしてください。", "error");
+    }
+    return;
+  }
+  if (btn.dataset.act === "save-memo") {
+    const id = btn.dataset.id;
+    const input = $(`.memo-input[data-id="${id}"]`);
+    btn.disabled = true;
+    try {
+      await updateCardMemo(id, input.value);
+      flash("memo を保存しました。");
+    } catch (err) {
+      flash(`memo保存に失敗しました: ${err?.message || err}`, "error");
+    } finally {
+      btn.disabled = false;
+    }
+  }
 }
 
 // ============================================================
@@ -467,6 +547,7 @@ async function onCardsClick(e) {
 async function onExportCsv() {
   const btn = $("#ne-csv-btn");
   btn.disabled = true;
+  busy($("#ne-result"), "CSV生成中…");
   try {
     const mark = $("#ne-csv-mark").checked ? "?markExported=1" : "";
     const res = await authorizedFetch(`/api/adminExportNeCsv${mark}`);
@@ -481,8 +562,10 @@ async function onExportCsv() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    busyDone($("#ne-result"), "CSVをダウンロードしました。");
     flash("CSVをダウンロードしました。");
   } catch (err) {
+    busyDone($("#ne-result"));
     flash(`CSV出力に失敗しました: ${err?.message || err}`, "error");
   } finally {
     btn.disabled = false;
@@ -492,7 +575,7 @@ async function onExportCsv() {
 async function onRetryNe() {
   const btn = $("#ne-retry-btn");
   btn.disabled = true;
-  $("#ne-result").textContent = "投入中…";
+  busy($("#ne-result"), "投入中…");
   try {
     const res = await authorizedFetch("/api/adminRetryNeSubmissions", {
       method: "POST",
@@ -500,11 +583,11 @@ async function onRetryNe() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(data?.code || `HTTP ${res.status}`);
-    $("#ne-result").textContent = data.configured
+    busyDone($("#ne-result"), data.configured
       ? `投入済 ${data.submitted} / 失敗 ${data.failed} / 対象外 ${data.skipped}`
-      : "自動投入は未設定です（CSV運用中）。対象0件。";
+      : "自動投入は未設定です（CSV運用中）。対象0件。");
   } catch (err) {
-    $("#ne-result").textContent = "";
+    busyDone($("#ne-result"));
     flash(`リトライに失敗しました: ${err?.message || err}`, "error");
   } finally {
     btn.disabled = false;

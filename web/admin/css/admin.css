@@ -154,7 +154,46 @@ button:disabled { opacity: .5; cursor: default; }
 .badge-unused { background: #eef2ff; color: #3730a3; }
 .badge-used { background: #f1f5f9; color: var(--muted); }
 .result { margin-top: 1rem; font-weight: 600; color: var(--ok); }
+/* 処理中の結果欄（スピナー＋メッセージ）は「進行中」が伝わるミュートした色に。 */
+.result.busy { color: var(--muted); }
 .error { color: var(--danger); font-size: .85rem; }
+
+/* ===== ローディング（スピナー / 読み込み中行） ===== */
+.spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  vertical-align: -.15em;
+  margin-right: .5em;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+/* 動きを避ける設定のユーザーには回転を止め、静的なインジケータにする。 */
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+}
+.loading-cell { color: var(--muted); }
+
+/* ===== QR一覧の受け取り者URLセル ===== */
+.url-cell { max-width: 280px; }
+.url-cell a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: .8rem;
+  word-break: break-all;
+}
+.url-cell a:hover { text-decoration: underline; }
+.copy-btn {
+  margin-top: .3rem;
+  background: #fff;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: .2rem .5rem;
+  font-size: .78rem;
+}
 
 .flash {
   position: fixed;

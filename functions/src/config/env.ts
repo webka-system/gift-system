@@ -31,6 +31,16 @@ export function neConfig(): NeConfig {
 }
 
 /**
+ * 受け取り者URL・QRの生成に使う公開ホスト（design.md 4.2）。
+ * 例: https://gift-system-f33b5.web.app。未設定なら本番の既定ドメインにフォールバック。
+ * 末尾スラッシュは正規化して除去する。
+ */
+export function publicHostingOrigin(): string {
+  const raw = process.env.PUBLIC_HOSTING_ORIGIN || "https://gift-system-f33b5.web.app";
+  return raw.replace(/\/+$/, "");
+}
+
+/**
  * 自動投入が有効か（fail-safe の既定は無効）。
  * mode=auto かつ client_id/secret・受注登録エンドポイントが揃っているときだけ true。
  * 揃うまで（＝マッピング仕様確定前）は false → Firestoreトリガーは何もせず pending のまま、

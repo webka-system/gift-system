@@ -40,6 +40,7 @@
       { "source": "/api/adminRetryNeSubmissions", "function": { "functionId": "adminRetryNeSubmissions", "region": "asia-northeast1" } },
       { "source": "/api/neCallback", "function": { "functionId": "neCallback", "region": "asia-northeast1" } },
       { "source": "/api/neCallbackTest", "function": { "functionId": "neCallbackTest", "region": "asia-northeast1" } },
+      { "source": "/api/adminExportQrPdf", "function": { "functionId": "adminExportQrPdf", "region": "asia-northeast1" } },
       { "source": "/g/**", "destination": "/receive/index.html" },
       { "source": "/admin/**", "destination": "/admin/index.html" }
     ]

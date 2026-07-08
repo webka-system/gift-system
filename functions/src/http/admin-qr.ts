@@ -84,6 +84,7 @@ export const adminGenerateGiftCards = onRequest({ region: REGION }, async (req, 
           cardTypeId,
           status: CARD_STATUS.UNUSED,
           memo: "",
+          printed: false, // 未印刷。印刷用PDF出力（?markPrinted=1）で true になる。
           createdAt: FieldValue.serverTimestamp() as unknown as FirebaseFirestore.Timestamp,
         });
       }

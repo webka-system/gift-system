@@ -42,6 +42,7 @@
       <button class="tab-btn" data-tab="products">選定可能商品</button>
       <button class="tab-btn" data-tab="generate">QR生成</button>
       <button class="tab-btn" data-tab="cards">QR一覧</button>
+      <button class="tab-btn" data-tab="print">印刷</button>
       <button class="tab-btn" data-tab="ne">NE連携</button>
     </nav>
 
@@ -115,6 +116,19 @@
           <thead><tr><th>トークン</th><th>種別</th><th>状態</th><th>使用日時</th><th>memo</th><th></th></tr></thead>
           <tbody id="cards-tbody"></tbody>
         </table>
+      </section>
+
+      <!-- 印刷用PDF -->
+      <section id="tab-print" class="tab-panel" hidden>
+        <h2>印刷用QRコードPDF</h2>
+        <p class="muted small">対象のQRカードを面付けした印刷用PDFを出力します。各QRは受け取り者URL（/g/&lt;token&gt;）を指します。レイアウト（枚数・サイズ・余白・トンボ等）は工場入稿仕様に合わせて後から調整できます。</p>
+        <div class="form-grid">
+          <label>種別<select id="print-type-select"></select></label>
+          <label class="inline" style="align-self:end"><input id="print-unprinted" type="checkbox" /> 未印刷分のみ</label>
+          <label class="inline" style="align-self:end"><input id="print-mark" type="checkbox" /> 出力分を「印刷済み」にする</label>
+          <button id="print-btn" type="button">PDFをダウンロード</button>
+        </div>
+        <p id="print-result" class="result"></p>
       </section>
 
       <!-- NE連携 -->

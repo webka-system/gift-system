@@ -26,12 +26,15 @@
   "devDependencies": {
     "@types/mocha": "^10.0.9",
     "@types/node": "^20.16.0",
+    "@types/pngjs": "^6.0.5",
     "@types/qrcode": "^1.5.5",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "cross-env": "^10.1.0",
     "eslint": "^8.57.0",
+    "jsqr": "^1.4.0",
     "mocha": "^10.8.2",
+    "pngjs": "^7.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.0"
   }

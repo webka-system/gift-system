@@ -80,6 +80,10 @@ export interface GiftCardData {
   memo: string;
   /** 生成日時。 */
   createdAt: Timestamp;
+  /** 印刷用PDFに出力済みか（未印刷分の抽出用 / design.md 4.1）。生成時 false。 */
+  printed?: boolean;
+  /** 印刷用PDFに出力した日時。 */
+  printedAt?: Timestamp;
 
   // ── 以下は使用（受け取り者の確定）時に書き込まれる ──
   /** 受け取り者が選んだ商品。 */

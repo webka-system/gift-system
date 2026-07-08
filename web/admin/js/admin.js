@@ -92,7 +92,7 @@ $$(".tab-btn").forEach((btn) => {
     const tab = btn.dataset.tab;
     $$(".tab-btn").forEach((b) => b.classList.toggle("active", b === btn));
     $$(".tab-panel").forEach((p) => { p.hidden = p.id !== `tab-${tab}`; });
-    if (tab === "products" || tab === "generate" || tab === "cards") refreshTypeSelectors();
+    if (tab === "products" || tab === "generate" || tab === "cards" || tab === "print") refreshTypeSelectors();
   });
 });
 
@@ -190,18 +190,55 @@ function wireForms() {
   $("#cards-status-select").addEventListener("change", renderCards);
   $("#cards-tbody").addEventListener("click", onCardsClick);
 
+  // 印刷用PDF。
+  $("#print-btn").addEventListener("click", onExportQrPdf);
+
   // NE連携。
   $("#ne-csv-btn").addEventListener("click", onExportCsv);
   $("#ne-retry-btn").addEventListener("click", onRetryNe);
 }
 
+// ============================================================
+// 印刷用QR PDF
+// ============================================================
+async function onExportQrPdf() {
+  const btn = $("#print-btn");
+  btn.disabled = true;
+  $("#print-result").textContent = "PDF生成中…";
+  try {
+    const params = new URLSearchParams();
+    const typeId = $("#print-type-select").value;
+    if (typeId) params.set("cardTypeId", typeId);
+    if ($("#print-unprinted").checked) params.set("unprintedOnly", "1");
+    if ($("#print-mark").checked) params.set("markPrinted", "1");
+    const token = await idToken();
+    const res = await fetch(`/api/adminExportQrPdf?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "qr-cards.pdf";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    $("#print-result").textContent = "PDFをダウンロードしました。";
+  } catch (err) {
+    $("#print-result").textContent = "";
+    flash(`PDF出力に失敗しました: ${err?.message || err}`, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // 種別セレクタ（商品・QR生成・一覧）を最新の種別で埋める。
 function refreshTypeSelectors() {
-  for (const sel of ["#product-type-select", "#generate-type-select", "#cards-type-select"]) {
+  for (const sel of ["#product-type-select", "#generate-type-select", "#cards-type-select", "#print-type-select"]) {
     const el = $(sel);
     if (!el) continue;
     const prev = el.value;
-    const isFilter = sel === "#cards-type-select";
+    const isFilter = sel === "#cards-type-select" || sel === "#print-type-select";
     el.innerHTML = (isFilter ? `<option value="">すべての種別</option>` : "") +
       cardTypesCache.map((t) => `<option value="${t.id}">${esc(t.name)}（${yen(t.price)}）</option>`).join("");
     if (prev) el.value = prev;

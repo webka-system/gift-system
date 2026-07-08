@@ -41,6 +41,14 @@
         { "fieldPath": "neStatus", "order": "ASCENDING" },
         { "fieldPath": "usedAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "giftCards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cardTypeId", "order": "ASCENDING" },
+        { "fieldPath": "printed", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

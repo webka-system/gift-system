@@ -15,12 +15,12 @@
 // projectId は確定済み。★ apiKey / appId / messagingSenderId は下の "TODO_..." をコンソールの実値に差し替える。
 //   （これらは Web の公開設定＝クライアント埋め込み前提・秘密鍵ではない＝コミット可）
 const PROD_CONFIG = {
-  apiKey: "TODO_PASTE_WEB_API_KEY",
+  apiKey: "AIzaSyBHkRUODW_19CYhUwZRGjUGCB9_sA7pFNg",
   authDomain: "gift-system-f33b5.firebaseapp.com",
   projectId: "gift-system-f33b5",
   storageBucket: "gift-system-f33b5.firebasestorage.app",
-  messagingSenderId: "TODO_PASTE_SENDER_ID",
-  appId: "TODO_PASTE_APP_ID",
+  messagingSenderId: "709387761372",
+  appId: "1:709387761372:web:ac7de8941ed3144bbca619",
 };
 
 // ── エミュレータ（ローカル確認用・ダミーで動く。差し替え不要）─────────────────────

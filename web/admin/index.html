@@ -42,6 +42,7 @@
       <button class="tab-btn" data-tab="products">選定可能商品</button>
       <button class="tab-btn" data-tab="generate">QR生成</button>
       <button class="tab-btn" data-tab="cards">QR一覧</button>
+      <button class="tab-btn" data-tab="ne">NE連携</button>
     </nav>
 
     <main class="app-body">
@@ -114,6 +115,21 @@
           <thead><tr><th>トークン</th><th>種別</th><th>状態</th><th>使用日時</th><th>memo</th><th></th></tr></thead>
           <tbody id="cards-tbody"></tbody>
         </table>
+      </section>
+
+      <!-- NE連携 -->
+      <section id="tab-ne" class="tab-panel" hidden>
+        <h2>NE連携（受注の投入）</h2>
+        <p class="muted small">住所が確定した受注（未投入）を NE へ渡します。自動投入が有効な場合はトリガーが自動で投入し、失敗分はここでリトライできます。CSV は未投入分を Shift_JIS で出力します。</p>
+
+        <h3>CSV出力（手動・日次取込用）</h3>
+        <label class="inline"><input id="ne-csv-mark" type="checkbox" /> ダウンロードした分を「取込済み」にする（二重取込防止）</label>
+        <div><button id="ne-csv-btn" type="button">未投入CSVをダウンロード</button></div>
+
+        <h3>自動投入のリトライ</h3>
+        <p class="muted small">自動投入が有効なときのみ動作します（未設定・CSV運用時は対象0件）。</p>
+        <div><button id="ne-retry-btn" type="button">未投入分を再投入</button></div>
+        <p id="ne-result" class="result"></p>
       </section>
     </main>
   </section>

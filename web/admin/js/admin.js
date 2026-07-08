@@ -189,6 +189,10 @@ function wireForms() {
   $("#cards-type-select").addEventListener("change", renderCards);
   $("#cards-status-select").addEventListener("change", renderCards);
   $("#cards-tbody").addEventListener("click", onCardsClick);
+
+  // NE連携。
+  $("#ne-csv-btn").addEventListener("click", onExportCsv);
+  $("#ne-retry-btn").addEventListener("click", onRetryNe);
 }
 
 // 種別セレクタ（商品・QR生成・一覧）を最新の種別で埋める。
@@ -365,4 +369,56 @@ async function onCardsClick(e) {
   const input = $(`.memo-input[data-id="${id}"]`);
   await updateCardMemo(id, input.value);
   flash("memo を保存しました。");
+}
+
+// ============================================================
+// NE連携（CSV出力・自動投入リトライ）
+// ============================================================
+async function onExportCsv() {
+  const btn = $("#ne-csv-btn");
+  btn.disabled = true;
+  try {
+    const mark = $("#ne-csv-mark").checked ? "?markExported=1" : "";
+    const token = await idToken();
+    const res = await fetch(`/api/adminExportNeCsv${mark}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // Shift_JIS のバイト列をそのまま Blob 化してダウンロード（ブラウザ側で文字コード変換しない）。
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "ne-orders.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    flash("CSVをダウンロードしました。");
+  } catch (err) {
+    flash(`CSV出力に失敗しました: ${err?.message || err}`, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function onRetryNe() {
+  const btn = $("#ne-retry-btn");
+  btn.disabled = true;
+  $("#ne-result").textContent = "投入中…";
+  try {
+    const token = await idToken();
+    const res = await fetch("/api/adminRetryNeSubmissions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data?.code || `HTTP ${res.status}`);
+    $("#ne-result").textContent = data.configured
+      ? `投入済 ${data.submitted} / 失敗 ${data.failed} / 対象外 ${data.skipped}`
+      : "自動投入は未設定です（CSV運用中）。対象0件。";
+  } catch (err) {
+    $("#ne-result").textContent = "";
+    flash(`リトライに失敗しました: ${err?.message || err}`, "error");
+  } finally {
+    btn.disabled = false;
+  }
 }

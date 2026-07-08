@@ -38,3 +38,9 @@ export { adminGenerateGiftCards } from "./http/admin-qr";
 // 受け取り者API: トークン照合でカードを引く / 商品選択＋住所確定（トランザクションで使用済み化）。
 // ログイン不要・トークンが唯一のアクセス制御（design.md 4.2 / 第8章）。
 export { receiveGetCard, receiveConfirm } from "./http/receive";
+
+// NE連携（design.md 第6章）:
+//   トリガー: 確定(used遷移)の瞬間に自動投入を試みる（未設定/CSV運用時は pending のまま）。
+export { onGiftCardConfirmed } from "./triggers/ne-submit";
+//   管理API: 未投入受注の CSV出力（Shift_JIS）/ 自動投入の手動リトライ。
+export { adminExportNeCsv, adminRetryNeSubmissions } from "./http/admin-ne";

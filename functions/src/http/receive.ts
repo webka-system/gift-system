@@ -41,9 +41,11 @@ function validateAddress(raw: unknown): ShippingAddress {
     postalCode: str(a.postalCode),
     prefecture: str(a.prefecture),
     address: str(a.address),
-    building: str(a.building) || undefined,
     phone: str(a.phone),
   };
+  // building は任意。空なら **フィールド自体を付けない**（undefined を Firestore に書くとエラーになるため）。
+  const building = str(a.building);
+  if (building) addr.building = building;
   // building 以外は必須。
   if (!addr.name || !addr.postalCode || !addr.prefecture || !addr.address || !addr.phone) {
     throw new ReceiveError(400, "invalid_address");

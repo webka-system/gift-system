@@ -29,6 +29,10 @@ if (getApps().length === 0) {
 
 export const db = getFirestore();
 
+// 任意フィールド（例: shippingAddress.building）が未指定のとき undefined を書こうとして
+// 例外になるのを防ぐ安全網。undefined のフィールドは黙って除外する（明示的な削除は FieldValue.delete）。
+db.settings({ ignoreUndefinedProperties: true });
+
 /**
  * 素通しの型付きコンバータ生成器。
  * Firestore ドキュメントを T（ドキュメントデータ型）として読み書きするための最小コンバータ。

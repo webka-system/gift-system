@@ -32,6 +32,15 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "giftCards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "neStatus", "order": "ASCENDING" },
+        { "fieldPath": "usedAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

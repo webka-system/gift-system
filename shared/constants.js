@@ -24,11 +24,14 @@ export const CARD_STATUS = {
 
 // ===== NE 投入状態（design.md 3.3 / 第6章）=====
 // 「住所が確定した実商品受注のみ」を NE へ投入し、投入後にこの値を更新する。
+// 状態遷移（自動）: pending → submitting → submitted（成功）/ pending（失敗時に戻す＝リトライ可能）
+// 状態遷移（CSV） : pending → csv（CSV出力＝取込済み扱い）
 export const NE_STATUS = {
-  PENDING: "pending",       // 未投入
-  SUBMITTED: "submitted",   // 自動連携で投入済
+  PENDING: "pending",       // 未投入（トリガー/CSVが拾う対象）
+  SUBMITTING: "submitting", // 自動投入の処理中（claimによる二重投入防止の中間状態）
+  SUBMITTED: "submitted",   // 自動連携で投入済（完了）
   CSV_EXPORTED: "csv",      // CSV出力済（手動/日次取込）
-  ERROR: "error",           // 投入失敗（要リトライ）
+  ERROR: "error",           // 投入失敗（予約。当面は失敗時 pending に戻す運用）
 };
 
 // ===== NE 連携方式（design.md 第6章。自動・CSV の両対応）=====

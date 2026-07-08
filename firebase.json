@@ -33,6 +33,7 @@
       "node -e \"const fs=require('fs');fs.mkdirSync('web/shared',{recursive:true});fs.copyFileSync('shared/constants.js','web/shared/constants.js')\""
     ],
     "rewrites": [
+      { "source": "/api/adminGenerateGiftCards", "function": { "functionId": "adminGenerateGiftCards", "region": "asia-northeast1" } },
       { "source": "/g/**", "destination": "/receive/index.html" },
       { "source": "/admin/**", "destination": "/admin/index.html" }
     ]

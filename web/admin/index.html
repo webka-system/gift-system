@@ -8,17 +8,116 @@
   <link rel="stylesheet" href="/admin/css/admin.css" />
 </head>
 <body>
-  <!--
-    管理画面（要ログイン / design.md 4.1）。
-    実装予定: カード種別管理 / 選定可能商品管理 / QR一括生成 / 印刷用出力 / QR一覧管理 / 受注確認。
-    現状は初期セットアップの雛形。
-  -->
-  <main class="app-shell">
-    <h1>gift-system 管理画面</h1>
-    <p class="muted">初期セットアップ完了。ここに管理機能を実装していきます。</p>
-  </main>
+  <!-- 一時メッセージ -->
+  <div id="flash" class="flash" hidden></div>
 
-  <!-- Firebase / アプリのスクリプトは実装フェーズで読み込む（ESM）。 -->
-  <!-- <script type="module" src="/admin/js/admin.js"></script> -->
+  <!-- ===== ログイン画面 ===== -->
+  <section id="login-view" class="login-view" hidden>
+    <form id="login-form" class="login-card">
+      <h1>gift-system 管理画面</h1>
+      <p class="muted">管理者アカウントでログインしてください。</p>
+      <label>メールアドレス
+        <input id="login-email" type="email" autocomplete="username" required />
+      </label>
+      <label>パスワード
+        <input id="login-password" type="password" autocomplete="current-password" required />
+      </label>
+      <button type="submit">ログイン</button>
+      <p id="login-error" class="error" hidden></p>
+    </form>
+  </section>
+
+  <!-- ===== アプリ本体 ===== -->
+  <section id="app-view" hidden>
+    <header class="app-header">
+      <h1>gift-system 管理画面</h1>
+      <div class="header-right">
+        <span id="user-email" class="muted"></span>
+        <button id="logout-btn" class="ghost">ログアウト</button>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="types">カード種別</button>
+      <button class="tab-btn" data-tab="products">選定可能商品</button>
+      <button class="tab-btn" data-tab="generate">QR生成</button>
+      <button class="tab-btn" data-tab="cards">QR一覧</button>
+    </nav>
+
+    <main class="app-body">
+      <!-- カード種別 -->
+      <section id="tab-types" class="tab-panel">
+        <h2>カード種別</h2>
+        <table class="data-table">
+          <thead><tr><th>表示名</th><th>価格帯</th><th>管理商品コード</th><th>状態</th><th></th></tr></thead>
+          <tbody id="types-tbody"></tbody>
+        </table>
+
+        <h3>種別の登録 / 編集</h3>
+        <form id="type-form" class="form-grid">
+          <input id="type-id" type="hidden" />
+          <label>表示名<input id="type-name" type="text" placeholder="3万円ギフトカード" required /></label>
+          <label>価格帯（円）<input id="type-price" type="number" min="0" step="1" placeholder="30000" required /></label>
+          <label>ギフトカード管理商品コード<input id="type-code" type="text" placeholder="CARD-30000" /></label>
+          <button id="type-submit" type="submit">種別を登録</button>
+        </form>
+      </section>
+
+      <!-- 選定可能商品 -->
+      <section id="tab-products" class="tab-panel" hidden>
+        <h2>選定可能商品</h2>
+        <label class="inline">対象の種別
+          <select id="product-type-select"></select>
+        </label>
+        <table class="data-table">
+          <thead><tr><th>画像</th><th>商品名 / 説明</th><th>NE商品コード</th><th>状態</th><th></th></tr></thead>
+          <tbody id="products-tbody"></tbody>
+        </table>
+
+        <h3>商品の登録</h3>
+        <p class="muted small">選択中の種別に紐づけて登録します（同一商品が複数種別にまたがることはありません）。</p>
+        <form id="product-form" class="form-grid">
+          <label>商品名<input id="product-name" type="text" required /></label>
+          <label>NE商品コード<input id="product-ne-code" type="text" required /></label>
+          <label class="wide">商品説明<textarea id="product-desc" rows="2"></textarea></label>
+          <label>商品画像<input id="product-image" type="file" accept="image/*" /></label>
+          <button id="product-submit" type="submit">商品を登録</button>
+        </form>
+      </section>
+
+      <!-- QR生成 -->
+      <section id="tab-generate" class="tab-panel" hidden>
+        <h2>QRコード一括生成</h2>
+        <p class="muted small">種別を指定して任意個数のQRカードを生成します。トークンはサーバ側で推測不可能な値として発行されます。</p>
+        <form id="generate-form" class="form-grid">
+          <label>種別<select id="generate-type-select"></select></label>
+          <label>生成個数<input id="generate-count" type="number" min="1" step="1" placeholder="100" required /></label>
+          <button id="generate-submit" type="submit">生成する</button>
+        </form>
+        <p id="generate-result" class="result"></p>
+      </section>
+
+      <!-- QR一覧 -->
+      <section id="tab-cards" class="tab-panel" hidden>
+        <h2>QR一覧</h2>
+        <div class="filters">
+          <label class="inline">種別<select id="cards-type-select"></select></label>
+          <label class="inline">状態
+            <select id="cards-status-select">
+              <option value="">すべて</option>
+              <option value="unused">未使用</option>
+              <option value="used">使用済</option>
+            </select>
+          </label>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>トークン</th><th>種別</th><th>状態</th><th>使用日時</th><th>memo</th><th></th></tr></thead>
+          <tbody id="cards-tbody"></tbody>
+        </table>
+      </section>
+    </main>
+  </section>
+
+  <script type="module" src="/admin/js/admin.js"></script>
 </body>
 </html>

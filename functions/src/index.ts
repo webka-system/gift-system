@@ -44,3 +44,5 @@ export { receiveGetCard, receiveConfirm } from "./http/receive";
 export { onGiftCardConfirmed } from "./triggers/ne-submit";
 //   管理API: 未投入受注の CSV出力（Shift_JIS）/ 自動投入の手動リトライ。
 export { adminExportNeCsv, adminRetryNeSubmissions } from "./http/admin-ne";
+//   認証コールバック（Redirect URI）: 本番用 /api/neCallback・テスト用 /api/neCallbackTest。
+export { neCallback, neCallbackTest } from "./http/ne-callback";

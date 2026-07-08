@@ -29,7 +29,7 @@
 
 // デプロイ強制識別子。gen2 が「ソース不変」と誤判定して再デプロイを skip する事象への保険。
 // 本番反映が疑わしいときは日付部を更新して再デプロイする（値自体はどこからも使わなくてよい）。
-export const BUILD_ID = "2026-07-08-init-1";
+export const BUILD_ID = "2026-07-08-invoker-public-1";
 
 // 管理API: QRコード一括生成（種別指定で任意個数・トークンはサーバ側生成 / design.md 4.1）。
 // 認証：Firebase Auth IDトークン（requireAuth）。

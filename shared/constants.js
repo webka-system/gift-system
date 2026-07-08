@@ -59,36 +59,19 @@ export const QR_GENERATION = {
 // ロケーションは変更不可のため東京で確定。
 export const REGION = "asia-northeast1";
 
-// ===== 印刷用PDF 面付けレイアウト（design.md 4.1「印刷用出力」/ 第9章 手順7）=====
-// ★ 暫定値。最終的な正解は印刷工場の入稿仕様（カード実寸・面付け要否・トンボ/塗り足し・CMYK・
-//   解像度）で決まる。工場仕様が判明したら **この定数を差し替えるだけ**で対応できるようにしてある。
-//   初期値は標準的な A4縦・3列×4行=12枚/ページ・QR約40mm・各QR下にトークン文字。
-//   QR解像度とクワイエットゾーンは読み取り信頼性を優先した値にしている。
-export const PRINT = {
-  // ページ寸法（mm）。既定 A4 縦。
-  PAGE_W_MM: 210,
-  PAGE_H_MM: 297,
-  // ページ外周の余白（mm）。
-  MARGIN_MM: 12,
-  // 面付けグリッド（1ページ = COLUMNS × ROWS 枚）。
-  COLUMNS: 3,
-  ROWS: 4,
-  // セル間のすき間（mm）。
-  GUTTER_MM: 6,
-  // QRコード1辺の仕上がりサイズ（mm）。読み取り優先の標準値。
-  QR_SIZE_MM: 40,
-  // 各QRの下にトークン文字を印字するか（目視突合用）。
-  SHOW_TOKEN_LABEL: true,
-  TOKEN_LABEL_PT: 7,
-  // QRのクワイエットゾーン（周囲の余白）＝モジュール数。規格の最小は4。読み取り信頼性優先で4。
-  QR_QUIET_ZONE_MODULES: 4,
-  // QR画像のレンダリング解像度（dpi）。入稿・印刷のかすれに耐えるよう高め。
-  QR_RENDER_DPI: 600,
-  // 誤り訂正レベル（L=7% / M=15% / Q=25% / H=30%）。印刷のかすれ耐性を優先して Q。
-  QR_ERROR_CORRECTION: "Q",
-  // トンボ・塗り足し（工場入稿仕様が確定するまで既定は無効）。
-  CROP_MARKS: false,
-  BLEED_MM: 0,
-  // 1回のPDF出力で扱う最大カード枚数（暴発・巨大生成の防止）。
-  MAX_CARDS_PER_PDF: 2000,
+// ===== 印刷用URL一覧の Excel(xlsx) 出力（design.md 4.1「印刷用出力」/ 第9章 手順7）=====
+// 印刷工場の入稿方式に合わせ、受け取り者URL（/g/<token>）を1行ずつ並べた Excel を出力する。
+// 工場は A列（URL）だけを参照する想定。管理側の突合用に B列=token / C列=種別名 を付ける。
+// 工場が「純粋なURL1列のみ」を求める場合に備え、URL_ONLY / INCLUDE_HEADER で切り替えられる。
+export const URL_EXPORT = {
+  // true: A列(URL)のみ。false: A=URL / B=token / C=種別名。
+  URL_ONLY: false,
+  // 先頭にヘッダ行を付けるか（工場が純URL列だけを求めるなら false にする）。
+  INCLUDE_HEADER: true,
+  // シート名。
+  SHEET_NAME: "URLs",
+  // 列見出し（INCLUDE_HEADER=true のとき使用）。
+  HEADERS: { url: "URL", token: "token", cardTypeName: "種別名" },
+  // 1回の出力で扱う最大行数（暴発防止）。
+  MAX_ROWS: 5000,
 };

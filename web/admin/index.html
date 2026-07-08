@@ -118,15 +118,16 @@
         </table>
       </section>
 
-      <!-- 印刷用PDF -->
+      <!-- 印刷用URL一覧（Excel） -->
       <section id="tab-print" class="tab-panel" hidden>
-        <h2>印刷用QRコードPDF</h2>
-        <p class="muted small">対象のQRカードを面付けした印刷用PDFを出力します。各QRは受け取り者URL（/g/&lt;token&gt;）を指します。レイアウト（枚数・サイズ・余白・トンボ等）は工場入稿仕様に合わせて後から調整できます。</p>
-        <div class="form-grid">
-          <label>種別<select id="print-type-select"></select></label>
-          <label class="inline" style="align-self:end"><input id="print-unprinted" type="checkbox" /> 未印刷分のみ</label>
-          <label class="inline" style="align-self:end"><input id="print-mark" type="checkbox" /> 出力分を「印刷済み」にする</label>
-          <button id="print-btn" type="button">PDFをダウンロード</button>
+        <h2>印刷用URL一覧（Excel）</h2>
+        <p class="muted small">対象のQRカードの受け取り者URL（/g/&lt;token&gt;）を1行ずつ並べた Excel を出力します。印刷工場はこのURL列を使ってQR化・印刷を行います。既定は A列=URL / B列=token / C列=種別名。</p>
+        <div class="print-controls">
+          <label class="field">種別<select id="print-type-select"></select></label>
+          <label class="check"><input id="print-unprinted" type="checkbox" /> 未印刷分のみ</label>
+          <label class="check"><input id="print-mark" type="checkbox" /> 出力分を「印刷済み」にする</label>
+          <label class="check"><input id="print-urlonly" type="checkbox" /> A列（URL）のみで出力</label>
+          <button id="print-btn" type="button" class="primary-btn">Excelをダウンロード</button>
         </div>
         <p id="print-result" class="result"></p>
       </section>

@@ -190,8 +190,8 @@ function wireForms() {
   $("#cards-status-select").addEventListener("change", renderCards);
   $("#cards-tbody").addEventListener("click", onCardsClick);
 
-  // 印刷用PDF。
-  $("#print-btn").addEventListener("click", onExportQrPdf);
+  // 印刷用URL一覧（Excel）。
+  $("#print-btn").addEventListener("click", onExportUrlXlsx);
 
   // NE連携。
   $("#ne-csv-btn").addEventListener("click", onExportCsv);
@@ -199,34 +199,35 @@ function wireForms() {
 }
 
 // ============================================================
-// 印刷用QR PDF
+// 印刷用URL一覧（Excel）
 // ============================================================
-async function onExportQrPdf() {
+async function onExportUrlXlsx() {
   const btn = $("#print-btn");
   btn.disabled = true;
-  $("#print-result").textContent = "PDF生成中…";
+  $("#print-result").textContent = "Excel生成中…";
   try {
     const params = new URLSearchParams();
     const typeId = $("#print-type-select").value;
     if (typeId) params.set("cardTypeId", typeId);
     if ($("#print-unprinted").checked) params.set("unprintedOnly", "1");
     if ($("#print-mark").checked) params.set("markPrinted", "1");
+    if ($("#print-urlonly").checked) params.set("urlOnly", "1");
     const token = await idToken();
-    const res = await fetch(`/api/adminExportQrPdf?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`/api/adminExportUrlXlsx?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "qr-cards.pdf";
+    a.download = "qr-urls.xlsx";
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    $("#print-result").textContent = "PDFをダウンロードしました。";
+    $("#print-result").textContent = "Excelをダウンロードしました。";
   } catch (err) {
     $("#print-result").textContent = "";
-    flash(`PDF出力に失敗しました: ${err?.message || err}`, "error");
+    flash(`Excel出力に失敗しました: ${err?.message || err}`, "error");
   } finally {
     btn.disabled = false;
   }

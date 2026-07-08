@@ -47,5 +47,5 @@ export { adminExportNeCsv, adminRetryNeSubmissions } from "./http/admin-ne";
 //   認証コールバック（Redirect URI）: 本番用 /api/neCallback・テスト用 /api/neCallbackTest。
 export { neCallback, neCallbackTest } from "./http/ne-callback";
 
-// 管理API: 印刷用QR面付けPDFの出力（種別/未印刷で対象選択・QRは /g/<token> / design.md 4.1）。
-export { adminExportQrPdf } from "./http/admin-print";
+// 管理API: 印刷工場入稿用のURL一覧Excel(xlsx)出力（種別/未印刷で対象選択・各行に /g/<token> / design.md 4.1）。
+export { adminExportUrlXlsx } from "./http/admin-export";

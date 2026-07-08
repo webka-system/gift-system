@@ -1,0 +1,22 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "selectableProducts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cardTypeId", "order": "ASCENDING" },
+        { "fieldPath": "active", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "giftCards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cardTypeId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

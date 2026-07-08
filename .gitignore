@@ -1,0 +1,82 @@
+# ===== 機密情報（絶対にコミットしない）=====
+# 実際の環境変数・APIキー・サービスアカウント鍵（NE APIトークン等）
+.env
+.env.*
+!.env.example
+# 念のため：あらゆる .env 系（__.env 等の非標準名・任意ディレクトリ）を無視。
+# ※ *.env は ".env" や "xxx.env"/"__.env" にマッチ。".env.example" は .example 終わりのため対象外。
+*.env
+**/*.env
+__.env
+!*.env.example
+!**/*.env.example
+*.key
+*.pem
+*-service-account*.json
+serviceAccount*.json
+serviceAccountKey.json
+credentials*.json
+gha-creds-*.json
+
+# ===== Node.js =====
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm/
+
+# ===== Firebase =====
+.firebase/
+firebase-debug.log*
+firebase-debug.*.log*
+firestore-debug.log*
+ui-debug.log*
+database-debug.log*
+pubsub-debug.log*
+storage-debug.log*
+*.cache/
+.runtimeconfig.json
+
+# ===== ビルド成果物 =====
+dist/
+build/
+out/
+# Hosting predeploy が生成する shared/constants.js のコピー（単一情報源は repo直下の shared/）
+web/shared/
+# ※汎用 "lib/" はソースの functions/src/lib まで巻き込むため使わない。
+#   ビルド出力は functions/lib/（下の Cloud Functions セクション）で個別に除外する。
+.next/
+.nuxt/
+.cache/
+coverage/
+*.tsbuildinfo
+
+# ===== Cloud Functions =====
+functions/node_modules/
+functions/lib/
+functions/.env
+functions/.env.*
+!functions/.env.example
+functions/.runtimeconfig.json
+
+# ===== OS / エディタ =====
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# ===== Claude Code（ローカル個人設定）=====
+.claude/settings.local.json
+
+# ===== 一時ファイル =====
+*.log
+tmp/
+temp/
+.tmp/

@@ -1,0 +1,19 @@
+/* gift-system 管理画面スタイル（初期雛形）。実装フェーズで拡張する。 */
+:root {
+  --fg: #1a1a1a;
+  --muted: #6b7280;
+  --bg: #f7f7f8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+.app-shell {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem;
+}
+.muted { color: var(--muted); }

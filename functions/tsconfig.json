@@ -1,0 +1,34 @@
+{
+  // gift-system Cloud Functions TypeScript 設定（strict 有効）
+  //
+  // SSOT 共有のための構成メモ（label-system に準拠）:
+  //   - rootDir を ".."（リポジトリルート）にし、include に ../shared/constants.js を含める。
+  //   - これにより shared/constants.js（単一情報源）が lib/shared/constants.js として
+  //     コンパイル＆デプロイされ、バックエンドが値を複製せずに参照できる。
+  //   - その副作用で出力構造は lib/functions/src/... となるため、
+  //     package.json の "main" は "lib/functions/src/index.js" を指す。
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2021",
+    "lib": ["es2021"],
+    "moduleResolution": "node",
+    "outDir": "lib",
+    "rootDir": "..",
+    "allowJs": true,
+    "checkJs": false,
+    "strict": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "declaration": false,
+    "resolveJsonModule": true
+  },
+  "compileOnSave": true,
+  "include": [
+    "src/**/*",
+    "../shared/constants.js"
+  ]
+}

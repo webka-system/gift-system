@@ -1,0 +1,44 @@
+rules_version = '2';
+
+// gift-system Firestore セキュリティルール（本番モード / design.md 第8章）
+//
+// 方針:
+//   - **既定は全拒否**。必要な口だけを明示的に開ける。
+//   - 管理画面（web/admin）は Firebase Auth ログイン必須。管理コレクションは認証済みのみ許可。
+//   - 受け取り者（web/receive）はログインしない。トークン照合・商品選択・住所確定・使用済み化は
+//     すべて **Cloud Functions（admin SDK）経由**で行い、クライアントから Firestore を直接触らせない。
+//     admin SDK はセキュリティルールをバイパスするため、ここでは受け取り者向けの口を開けない
+//     （＝ giftCards をクライアントから読み書きできない＝トークン列挙・二重利用の防止）。
+//
+// ※ 認証済みユーザー＝管理者、という前提。将来 operator ロール（admins コレクション照合）を
+//   導入する場合は isAdmin() を差し替える。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ログイン済み＝管理者とみなす簡易版（初期）。
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // ギフトカード種別（親）: 管理画面のみ読み書き。
+    match /giftCardTypes/{typeId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 選定可能商品（子）: 管理画面のみ読み書き。
+    match /selectableProducts/{productId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 発行済みQRカード: 管理画面のみ読み書き。
+    // 受け取り者による使用（商品選択・住所確定・使用済み化）は Cloud Functions 経由のみ。
+    match /giftCards/{cardId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // それ以外は全拒否。
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

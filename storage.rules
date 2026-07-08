@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// gift-system Cloud Storage セキュリティルール（design.md 第8章）
+//
+// 用途: 選定可能商品の画像（design.md 3.2 imageUrl）。
+// 方針:
+//   - 商品画像は受け取り者画面（ログイン不要）で表示するため **公開読み取り可**。
+//   - 書き込み（アップロード・削除）は管理画面のログイン必須。
+//   - それ以外のパスは全拒否。
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // 商品画像: 誰でも閲覧可・書き込みは管理者のみ。
+    match /products/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // それ以外は全拒否。
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

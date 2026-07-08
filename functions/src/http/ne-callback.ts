@@ -16,8 +16,8 @@
 
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
-import { REGION } from "../config/constants";
 import { applyCors } from "./cors";
+import { HTTP_OPTIONS } from "./options";
 
 function pageHtml(envLabel: string, received: boolean): string {
   const note = received
@@ -38,7 +38,7 @@ function pageHtml(envLabel: string, received: boolean): string {
  * envLabel で本番/テストを区別（将来トークン保存先を分けるため）。
  */
 function handleNeCallback(envLabel: "prod" | "test") {
-  return onRequest({ region: REGION }, async (req, res) => {
+  return onRequest(HTTP_OPTIONS, async (req, res) => {
     applyCors(req.headers, res, "GET, OPTIONS");
     if (req.method === "OPTIONS") { res.status(204).send(""); return; }
     if (req.method !== "GET") { res.status(405).json({ ok: false, code: "method_not_allowed" }); return; }

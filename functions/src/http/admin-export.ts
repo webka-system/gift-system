@@ -11,7 +11,8 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 import { FieldValue } from "firebase-admin/firestore";
-import { REGION, URL_EXPORT } from "../config/constants";
+import { URL_EXPORT } from "../config/constants";
+import { HTTP_OPTIONS } from "./options";
 import { publicHostingOrigin } from "../config/env";
 import { db, giftCardsRef, giftCardTypesRef } from "../lib/firestore";
 import { buildCardUrl } from "../lib/url";
@@ -26,7 +27,7 @@ const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
  * GET /api/adminExportUrlXlsx?cardTypeId=...&unprintedOnly=1&markPrinted=1&urlOnly=1
  *   res: xlsx（各行に受け取り者URL）。対象0件でも（ヘッダのみ／空の）xlsxを返す。
  */
-export const adminExportUrlXlsx = onRequest({ region: REGION }, async (req, res) => {
+export const adminExportUrlXlsx = onRequest(HTTP_OPTIONS, async (req, res) => {
   applyCors(req.headers, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
   if (req.method !== "GET") { res.status(405).json({ ok: false, code: "method_not_allowed" }); return; }

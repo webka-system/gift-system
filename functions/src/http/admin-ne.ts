@@ -11,7 +11,8 @@
 
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
-import { REGION, CARD_STATUS, NE_STATUS } from "../config/constants";
+import { CARD_STATUS, NE_STATUS } from "../config/constants";
+import { HTTP_OPTIONS } from "./options";
 import { isNeAutoConfigured } from "../config/env";
 import { db, giftCardsRef, giftCardTypesRef, selectableProductsRef } from "../lib/firestore";
 import { GiftCardData } from "../models";
@@ -43,7 +44,7 @@ function fmtDate(ts: unknown): string {
  * GET /api/adminExportNeCsv[?markExported=1]
  *   res: text/csv（Shift_JIS）。対象0件でもヘッダ行のみの空CSVを返す。
  */
-export const adminExportNeCsv = onRequest({ region: REGION }, async (req, res) => {
+export const adminExportNeCsv = onRequest(HTTP_OPTIONS, async (req, res) => {
   applyCors(req.headers, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
   if (req.method !== "GET") { res.status(405).json({ ok: false, code: "method_not_allowed" }); return; }
@@ -111,7 +112,7 @@ export const adminExportNeCsv = onRequest({ region: REGION }, async (req, res) =
  *   自動投入が有効なとき、pending の確定受注をまとめて再投入。
  *   res: { ok:true, configured:boolean, submitted:number, failed:number, skipped:number }
  */
-export const adminRetryNeSubmissions = onRequest({ region: REGION }, async (req, res) => {
+export const adminRetryNeSubmissions = onRequest(HTTP_OPTIONS, async (req, res) => {
   applyCors(req.headers, res, "POST, OPTIONS");
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
   if (req.method !== "POST") { res.status(405).json({ ok: false, code: "method_not_allowed" }); return; }

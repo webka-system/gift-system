@@ -15,7 +15,8 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 import { FieldValue } from "firebase-admin/firestore";
-import { REGION, CARD_STATUS, NE_STATUS } from "../config/constants";
+import { CARD_STATUS, NE_STATUS } from "../config/constants";
+import { HTTP_OPTIONS } from "./options";
 import { db, giftCardsRef, giftCardTypesRef, selectableProductsRef } from "../lib/firestore";
 import { ShippingAddress } from "../models";
 import { applyCors } from "./cors";
@@ -59,7 +60,7 @@ function validateAddress(raw: unknown): ShippingAddress {
  *       あるいは { ok:true, status:"used" }（使用済み＝二重利用防止表示用。商品情報は返さない）
  *   res(404): { ok:false, code:"not_found" }（無効トークン）
  */
-export const receiveGetCard = onRequest({ region: REGION }, async (req, res) => {
+export const receiveGetCard = onRequest(HTTP_OPTIONS, async (req, res) => {
   applyCors(req.headers, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
   if (req.method !== "GET") { res.status(405).json({ ok: false, code: "method_not_allowed" }); return; }
@@ -111,7 +112,7 @@ export const receiveGetCard = onRequest({ region: REGION }, async (req, res) => 
  *
  * 二重確定防止: トランザクション内で「status が unused であること」を検証してから used に更新する。
  */
-export const receiveConfirm = onRequest({ region: REGION }, async (req, res) => {
+export const receiveConfirm = onRequest(HTTP_OPTIONS, async (req, res) => {
   applyCors(req.headers, res, "POST, OPTIONS");
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
   if (req.method !== "POST") { res.status(405).json({ ok: false, code: "method_not_allowed" }); return; }

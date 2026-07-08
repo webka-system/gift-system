@@ -13,7 +13,8 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 import { FieldValue } from "firebase-admin/firestore";
-import { REGION, CARD_STATUS, QR_GENERATION } from "../config/constants";
+import { CARD_STATUS, QR_GENERATION } from "../config/constants";
+import { HTTP_OPTIONS } from "./options";
 import { db, giftCardsRef, giftCardTypesRef } from "../lib/firestore";
 import { generateCardToken } from "../lib/token";
 import { applyCors } from "./cors";
@@ -33,7 +34,7 @@ interface GenerateBody {
  *   body: { cardTypeId: string, count: number }
  *   res : { ok: true, created: number } | { ok: false, code, message? }
  */
-export const adminGenerateGiftCards = onRequest({ region: REGION }, async (req, res) => {
+export const adminGenerateGiftCards = onRequest(HTTP_OPTIONS, async (req, res) => {
   applyCors(req.headers, res, "POST, OPTIONS");
   if (req.method === "OPTIONS") {
     res.status(204).send("");

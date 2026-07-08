@@ -56,6 +56,22 @@ function flash(msg, kind = "info") {
 // 種別のキャッシュ（商品・QR画面のセレクタ描画に使う）。
 let cardTypesCache = [];
 
+/**
+ * admin系 API（/api/admin*）の共通 fetch。ログイン中ユーザーの IDトークンを Authorization に付与する。
+ * トークンが取得できない（＝ログイン切れ）ときは "Bearer null" を送らず、明確なエラーで止める。
+ * これにより「トークン未付与による 401」を早期・明確に検知できる。
+ */
+async function authorizedFetch(url, options = {}) {
+  const token = await idToken();
+  if (!token) {
+    throw new Error("ログインの有効期限が切れています。ページを再読み込みして再度ログインしてください。");
+  }
+  return fetch(url, {
+    ...options,
+    headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` },
+  });
+}
+
 // ============================================================
 // 認証ゲート
 // ============================================================
@@ -180,7 +196,9 @@ function wireForms() {
 
   // 商品フォーム。
   $("#product-form").addEventListener("submit", onProductSubmit);
-  $("#product-type-select").addEventListener("change", renderProducts);
+  $("#product-cancel").addEventListener("click", resetProductForm);
+  // 種別を切り替えたら編集モードは解除（別種別の商品を編集中のまま登録しないように）。
+  $("#product-type-select").addEventListener("change", () => { resetProductForm(); renderProducts(); });
 
   // QR生成フォーム。
   $("#generate-form").addEventListener("submit", onGenerateSubmit);
@@ -212,8 +230,7 @@ async function onExportUrlXlsx() {
     if ($("#print-unprinted").checked) params.set("unprintedOnly", "1");
     if ($("#print-mark").checked) params.set("markPrinted", "1");
     if ($("#print-urlonly").checked) params.set("urlOnly", "1");
-    const token = await idToken();
-    const res = await fetch(`/api/adminExportUrlXlsx?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await authorizedFetch(`/api/adminExportUrlXlsx?${params.toString()}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
@@ -257,6 +274,7 @@ async function renderProducts() {
     return;
   }
   const products = await listProductsByType(cardTypeId);
+  productsCache = products;
   tbody.innerHTML = "";
   if (products.length === 0) {
     tbody.innerHTML = `<tr><td colspan="5" class="muted">この種別にはまだ商品がありません。</td></tr>`;
@@ -270,6 +288,7 @@ async function renderProducts() {
       <td>${esc(p.neProductCode)}</td>
       <td>${p.active ? "有効" : "<span class='muted'>無効</span>"}</td>
       <td class="row-actions">
+        <button data-act="edit" data-id="${p.id}">編集</button>
         <button data-act="toggle" data-id="${p.id}" data-active="${p.active}">${p.active ? "無効化" : "有効化"}</button>
         <button data-act="delete" data-id="${p.id}">削除</button>
       </td>`;
@@ -277,17 +296,43 @@ async function renderProducts() {
   }
 }
 
+// 商品編集用に、現在描画中の商品をキャッシュ（フォームへ値を載せるため）。
+let productsCache = [];
+
+/** 商品フォームを新規モードに戻す。 */
+function resetProductForm() {
+  $("#product-form").reset();
+  $("#product-id").value = "";
+  $("#product-form-title").textContent = "商品の登録";
+  $("#product-submit").textContent = "商品を登録";
+  $("#product-cancel").hidden = true;
+}
+
 $("#products-tbody").addEventListener("click", async (e) => {
   const btn = e.target.closest("button");
   if (!btn) return;
   const id = btn.dataset.id;
-  if (btn.dataset.act === "toggle") {
+  if (btn.dataset.act === "edit") {
+    // フォームに値を載せて更新モードにする（画像は選び直したときだけ差し替え）。
+    const p = productsCache.find((x) => x.id === id);
+    if (!p) return;
+    $("#product-id").value = p.id;
+    $("#product-name").value = p.name || "";
+    $("#product-ne-code").value = p.neProductCode || "";
+    $("#product-desc").value = p.description || "";
+    $("#product-image").value = "";
+    $("#product-form-title").textContent = "商品の編集";
+    $("#product-submit").textContent = "商品を更新";
+    $("#product-cancel").hidden = false;
+    $("#product-name").focus();
+  } else if (btn.dataset.act === "toggle") {
     await updateProduct(id, { active: btn.dataset.active !== "true" });
     await renderProducts();
   } else if (btn.dataset.act === "delete") {
     if (!confirm("この商品を削除しますか？")) return;
     await deleteProduct(id);
     flash("商品を削除しました。");
+    if ($("#product-id").value === id) resetProductForm();
     await renderProducts();
   }
 });
@@ -305,27 +350,35 @@ async function onProductSubmit(e) {
     flash("商品名とNE商品コードは必須です。", "error");
     return;
   }
+  const editingId = $("#product-id").value;
   const submitBtn = $("#product-submit");
   submitBtn.disabled = true;
   try {
-    let imageUrl = "";
     const file = $("#product-image").files[0];
-    if (file) {
-      flash("画像をアップロード中…");
-      imageUrl = await uploadProductImage(cardTypeId, file);
+    const description = $("#product-desc").value.trim();
+
+    if (editingId) {
+      // 更新: 画像は選び直したときだけ差し替える。
+      const patch = { name, description, neProductCode };
+      if (file) {
+        flash("画像をアップロード中…");
+        patch.imageUrl = await uploadProductImage(cardTypeId, file);
+      }
+      await updateProduct(editingId, patch);
+      flash("商品を更新しました。");
+    } else {
+      let imageUrl = "";
+      if (file) {
+        flash("画像をアップロード中…");
+        imageUrl = await uploadProductImage(cardTypeId, file);
+      }
+      await createProduct({ cardTypeId, name, description, imageUrl, neProductCode });
+      flash("商品を登録しました。");
     }
-    await createProduct({
-      cardTypeId,
-      name,
-      description: $("#product-desc").value.trim(),
-      imageUrl,
-      neProductCode,
-    });
-    flash("商品を登録しました。");
-    e.target.reset();
+    resetProductForm();
     await renderProducts();
   } catch (err) {
-    flash(`商品の登録に失敗しました: ${err?.message || err}`, "error");
+    flash(`商品の${editingId ? "更新" : "登録"}に失敗しました: ${err?.message || err}`, "error");
   } finally {
     submitBtn.disabled = false;
   }
@@ -350,10 +403,9 @@ async function onGenerateSubmit(e) {
   btn.disabled = true;
   $("#generate-result").textContent = "生成中…";
   try {
-    const token = await idToken();
-    const res = await fetch("/api/adminGenerateGiftCards", {
+    const res = await authorizedFetch("/api/adminGenerateGiftCards", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cardTypeId, count }),
     });
     const data = await res.json().catch(() => ({}));
@@ -417,8 +469,7 @@ async function onExportCsv() {
   btn.disabled = true;
   try {
     const mark = $("#ne-csv-mark").checked ? "?markExported=1" : "";
-    const token = await idToken();
-    const res = await fetch(`/api/adminExportNeCsv${mark}`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await authorizedFetch(`/api/adminExportNeCsv${mark}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     // Shift_JIS のバイト列をそのまま Blob 化してダウンロード（ブラウザ側で文字コード変換しない）。
     const blob = await res.blob();
@@ -443,10 +494,9 @@ async function onRetryNe() {
   btn.disabled = true;
   $("#ne-result").textContent = "投入中…";
   try {
-    const token = await idToken();
-    const res = await fetch("/api/adminRetryNeSubmissions", {
+    const res = await authorizedFetch("/api/adminRetryNeSubmissions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(data?.code || `HTTP ${res.status}`);

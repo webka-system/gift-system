@@ -76,14 +76,16 @@
           <tbody id="products-tbody"></tbody>
         </table>
 
-        <h3>商品の登録</h3>
-        <p class="muted small">選択中の種別に紐づけて登録します（同一商品が複数種別にまたがることはありません）。</p>
+        <h3 id="product-form-title">商品の登録</h3>
+        <p class="muted small">選択中の種別に紐づけて登録します（同一商品が複数種別にまたがることはありません）。編集時、画像は選び直したときだけ差し替わります。</p>
         <form id="product-form" class="form-grid">
+          <input id="product-id" type="hidden" />
           <label>商品名<input id="product-name" type="text" required /></label>
           <label>NE商品コード<input id="product-ne-code" type="text" required /></label>
           <label class="wide">商品説明<textarea id="product-desc" rows="2"></textarea></label>
           <label>商品画像<input id="product-image" type="file" accept="image/*" /></label>
           <button id="product-submit" type="submit">商品を登録</button>
+          <button id="product-cancel" type="button" class="ghost" hidden>編集をやめる</button>
         </form>
       </section>
 

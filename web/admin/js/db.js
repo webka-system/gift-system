@@ -105,6 +105,13 @@ export function deleteProduct(id) {
   return deleteDoc(doc(db, COLLECTIONS.SELECTABLE_PRODUCTS, id));
 }
 
+/** 商品1件を ID で取得（受注確認ビューで選択商品を表示するため）。 */
+export async function getProductById(id) {
+  if (!id) return null;
+  const s = await getDoc(doc(db, COLLECTIONS.SELECTABLE_PRODUCTS, id));
+  return s.exists() ? { id: s.id, ...s.data() } : null;
+}
+
 // ===== 発行済QRカード（giftCards）=====
 // 生成は Functions（adminGenerateGiftCards）。ここは一覧・memo更新のみ。
 

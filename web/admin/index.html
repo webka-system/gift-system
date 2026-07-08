@@ -149,6 +149,17 @@
         <p id="ne-result" class="result"></p>
       </section>
     </main>
+
+    <!-- ===== 受注詳細ビュー（モーダル / グループB） ===== -->
+    <div id="detail-overlay" class="modal-overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+        <header class="modal-header">
+          <h2 id="detail-title">受注詳細</h2>
+          <button id="detail-close" class="ghost" type="button" aria-label="閉じる">×</button>
+        </header>
+        <div id="detail-body" class="modal-body"></div>
+      </div>
+    </div>
   </section>
 
   <script type="module" src="/admin/js/admin.js"></script>

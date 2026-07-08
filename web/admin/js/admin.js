@@ -16,9 +16,10 @@ import { onAuth, login, logout, idToken, loginErrorMessage } from "./auth.js";
 import {
   listCardTypes, createCardType, updateCardType, setCardTypeActive,
   listProductsByType, createProduct, updateProduct, deleteProduct,
-  listCards, updateCardMemo, CARD_STATUS,
+  listCards, updateCardMemo, getProductById, CARD_STATUS,
 } from "./db.js";
 import { uploadProductImage } from "./storage.js";
+import { neStatusInfo, statusBadgeHtml } from "./status.js";
 import { TOKEN } from "/shared/constants.js";
 
 // ===== 小さなユーティリティ =====
@@ -260,6 +261,17 @@ function wireForms() {
   $("#cards-status-select").addEventListener("change", renderCards);
   $("#cards-tbody").addEventListener("click", onCardsClick);
 
+  // 受注詳細モーダル（グループB）。
+  $("#detail-body").addEventListener("click", onDetailClick);
+  $("#detail-close").addEventListener("click", closeCardDetail);
+  // オーバーレイの余白クリック・Escで閉じる。
+  $("#detail-overlay").addEventListener("click", (e) => {
+    if (e.target === $("#detail-overlay")) closeCardDetail();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("#detail-overlay").hidden) closeCardDetail();
+  });
+
   // 印刷用URL一覧（Excel）。
   $("#print-btn").addEventListener("click", onExportUrlXlsx);
 
@@ -483,12 +495,16 @@ async function onGenerateSubmit(e) {
 // ============================================================
 // QR一覧（ステータス確認・memo入力）
 // ============================================================
+// 現在描画中のカード一覧。詳細ビューがカードを引くために保持する。
+let cardsCache = [];
+
 async function renderCards() {
   const cardTypeId = $("#cards-type-select").value || undefined;
   const status = $("#cards-status-select").value || undefined;
   const tbody = $("#cards-tbody");
   tableLoading(tbody, 7);
   const cards = await listCards({ cardTypeId, status });
+  cardsCache = cards;
   const typeName = (id) => cardTypesCache.find((t) => t.id === id)?.name || id;
   tbody.innerHTML = "";
   if (cards.length === 0) {
@@ -496,20 +512,22 @@ async function renderCards() {
     return;
   }
   for (const c of cards) {
-    const used = c.status === CARD_STATUS.USED;
     const url = receiveUrl(c.token);
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="mono small">${esc(c.token)}</td>
       <td>${esc(typeName(c.cardTypeId))}</td>
-      <td>${used ? "<span class='badge badge-used'>使用済</span>" : "<span class='badge badge-unused'>未使用</span>"}</td>
+      <td class="status-cell">${statusBadgeHtml(c)}</td>
       <td class="url-cell">
         <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>
         <button class="copy-btn" data-act="copy-url" data-url="${esc(url)}" title="URLをコピー">コピー</button>
       </td>
       <td>${fmtDate(c.usedAt)}</td>
       <td><input class="memo-input" data-id="${c.id}" value="${esc(c.memo)}" placeholder="受注番号など"></td>
-      <td class="row-actions"><button data-act="save-memo" data-id="${c.id}">memo保存</button></td>`;
+      <td class="row-actions">
+        <button data-act="detail" data-id="${c.id}">詳細</button>
+        <button data-act="save-memo" data-id="${c.id}">memo保存</button>
+      </td>`;
     tbody.appendChild(tr);
   }
 }
@@ -518,12 +536,11 @@ async function onCardsClick(e) {
   const btn = e.target.closest("button");
   if (!btn) return;
   if (btn.dataset.act === "copy-url") {
-    try {
-      await navigator.clipboard.writeText(btn.dataset.url);
-      flash("URLをコピーしました。");
-    } catch (_) {
-      flash("コピーに失敗しました。URLを選択して手動でコピーしてください。", "error");
-    }
+    await copyToClipboard(btn.dataset.url);
+    return;
+  }
+  if (btn.dataset.act === "detail") {
+    openCardDetail(btn.dataset.id);
     return;
   }
   if (btn.dataset.act === "save-memo") {
@@ -532,6 +549,147 @@ async function onCardsClick(e) {
     btn.disabled = true;
     try {
       await updateCardMemo(id, input.value);
+      flash("memo を保存しました。");
+    } catch (err) {
+      flash(`memo保存に失敗しました: ${err?.message || err}`, "error");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+}
+
+/** クリップボードにコピー（成功/失敗をflashで通知）。一覧・詳細で共用。 */
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    flash("URLをコピーしました。");
+  } catch (_) {
+    flash("コピーに失敗しました。URLを選択して手動でコピーしてください。", "error");
+  }
+}
+
+// ============================================================
+// 受注詳細ビュー（グループB：読み取り中心＋memo編集）
+// ============================================================
+// 詳細モーダルで表示中のカードID（memo保存の対象）。
+let detailCardId = null;
+
+/** 配送先住所の1行を「ラベル：値」で描画（値が空なら空欄表示）。 */
+function addrRow(label, value) {
+  return `<div class="detail-row"><span class="detail-label">${esc(label)}</span>` +
+    `<span class="detail-value">${value ? esc(value) : "<span class='muted'>—</span>"}</span></div>`;
+}
+
+/** 詳細モーダルを開いてカードの受注内容を描画する。選択商品は Firestore から引く。 */
+async function openCardDetail(cardId) {
+  const card = cardsCache.find((c) => c.id === cardId);
+  if (!card) return;
+  detailCardId = cardId;
+  const overlay = $("#detail-overlay");
+  const body = $("#detail-body");
+  overlay.hidden = false;
+  body.innerHTML = `<div class="loading-cell">${SPINNER}読み込み中…</div>`;
+
+  const type = cardTypesCache.find((t) => t.id === card.cardTypeId);
+  const used = card.status === CARD_STATUS.USED;
+  const url = receiveUrl(card.token);
+
+  // 選択商品は使用済みのときだけ引く（未使用カードは selectedProductId を持たない）。
+  let product = null;
+  if (card.selectedProductId) {
+    try {
+      product = await getProductById(card.selectedProductId);
+    } catch (_) { /* 取得失敗時は商品IDのみ表示にフォールバック */ }
+  }
+  // 描画中に別のカード詳細へ切り替わっていたら破棄（競合防止）。
+  if (detailCardId !== cardId) return;
+
+  const addr = card.shippingAddress || {};
+  const ne = neStatusInfo(card.neStatus);
+
+  const productHtml = card.selectedProductId
+    ? `<div class="detail-product">
+         ${product?.imageUrl ? `<img class="thumb-lg" src="${esc(product.imageUrl)}" alt="">` : ""}
+         <div>
+           <div class="detail-value">${esc(product?.name || "（商品情報を取得できませんでした）")}</div>
+           <div class="muted small">${esc(product?.description || "")}</div>
+           <div class="muted small">NE商品コード: ${esc(product?.neProductCode || "")}</div>
+           <div class="muted small mono">productId: ${esc(card.selectedProductId)}</div>
+         </div>
+       </div>`
+    : `<span class="muted">未選択（未使用カード）</span>`;
+
+  body.innerHTML = `
+    <section class="detail-section">
+      <h3>カード</h3>
+      ${addrRow("種別", type ? `${type.name}（${yen(type.price)}）` : card.cardTypeId)}
+      ${addrRow("トークン", card.token)}
+      <div class="detail-row">
+        <span class="detail-label">状態</span>
+        <span class="detail-value status-cell">${statusBadgeHtml(card)}</span>
+      </div>
+      ${used ? addrRow("確定日時", fmtDate(card.usedAt)) : ""}
+      ${used ? addrRow("NE投入状態", ne.label) : ""}
+    </section>
+
+    <section class="detail-section">
+      <h3>選択された商品</h3>
+      ${productHtml}
+    </section>
+
+    <section class="detail-section">
+      <h3>配送先住所</h3>
+      ${used
+        ? addrRow("氏名", addr.name) +
+          addrRow("郵便番号", addr.postalCode) +
+          addrRow("都道府県", addr.prefecture) +
+          addrRow("住所", addr.address) +
+          addrRow("建物名・部屋番号", addr.building) +
+          addrRow("電話番号", addr.phone)
+        : `<span class="muted">未入力（未使用カード）</span>`}
+    </section>
+
+    <section class="detail-section">
+      <h3>受け取り者用URL</h3>
+      <div class="url-cell">
+        <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>
+        <button class="copy-btn" type="button" data-act="detail-copy-url" data-url="${esc(url)}">コピー</button>
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <h3>memo（管理者記入欄）</h3>
+      <textarea id="detail-memo" class="detail-memo" rows="2" placeholder="受注番号など突合用">${esc(card.memo)}</textarea>
+      <div><button id="detail-memo-save" type="button">memoを保存</button></div>
+    </section>`;
+}
+
+/** 詳細モーダルを閉じる。 */
+function closeCardDetail() {
+  $("#detail-overlay").hidden = true;
+  detailCardId = null;
+}
+
+/** 詳細モーダル内のクリック（コピー・memo保存）。 */
+async function onDetailClick(e) {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  if (btn.dataset.act === "detail-copy-url") {
+    await copyToClipboard(btn.dataset.url);
+    return;
+  }
+  if (btn.id === "detail-memo-save") {
+    const id = detailCardId;
+    if (!id) return;
+    const memo = $("#detail-memo").value;
+    btn.disabled = true;
+    try {
+      await updateCardMemo(id, memo);
+      // キャッシュと一覧の入力欄も同期させ、閉じた後に古い値が残らないようにする。
+      const cached = cardsCache.find((c) => c.id === id);
+      if (cached) cached.memo = memo;
+      const listInput = $(`.memo-input[data-id="${id}"]`);
+      if (listInput) listInput.value = memo;
       flash("memo を保存しました。");
     } catch (err) {
       flash(`memo保存に失敗しました: ${err?.message || err}`, "error");

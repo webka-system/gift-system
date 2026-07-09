@@ -29,7 +29,7 @@
  */
 
 import { ShippingAddress } from "../models";
-import { NE_FIXED, DELIVERY } from "../config/constants";
+import { NE_FIXED } from "../config/constants";
 import { NE_UPLOAD_PATTERN_ID } from "../config/env";
 
 /**
@@ -67,11 +67,17 @@ export interface NeOrderInput {
 
 /**
  * 本システムの時間帯表記 → NE の時間帯区分表記の対応表。
- * ★ 値（右辺）は暫定で本システム表記と同一。NE の時間帯区分が確定したら値を差し替える（TODO(NE)）。
- * SSOT（DELIVERY.TIME_SLOTS）から生成して取りこぼしを防ぐ。
+ * サンプルCSVの表記（「時間帯指定[午前中]」「時間帯指定[13時-14時]」）に合わせ、「○時-○時」形式に寄せる。
+ * CSV側で「時間帯指定[<この値>]」に整形する。
+ * ★NEが受け付ける正確な時間帯表記は実接続時に要確認（区分変換警告の有無）。合わなければここの右辺を差し替える。
  */
-export const NE_DELIVERY_TIME_MAP: Record<string, string> =
-  Object.fromEntries(DELIVERY.TIME_SLOTS.map((s) => [s, s]));
+export const NE_DELIVERY_TIME_MAP: Record<string, string> = {
+  "午前中": "午前中",
+  "14:00-16:00": "14時-16時",
+  "16:00-18:00": "16時-18時",
+  "18:00-20:00": "18時-20時",
+  "19:00-21:00": "19時-21時",
+};
 
 /** 配達希望時間帯を NE 表記へ変換（未指定・未知は空/そのまま）。 */
 export function neDeliveryTime(slot?: string): string {

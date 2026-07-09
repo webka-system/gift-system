@@ -11,13 +11,13 @@
 
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
-import { CARD_STATUS, NE_STATUS, NE_FIXED } from "../config/constants";
+import { CARD_STATUS, NE_STATUS } from "../config/constants";
 import { HTTP_OPTIONS } from "./options";
 import { isNeAutoConfigured } from "../config/env";
-import { db, giftCardsRef, giftCardTypesRef, selectableProductsRef } from "../lib/firestore";
+import { db, giftCardsRef, selectableProductsRef } from "../lib/firestore";
 import { GiftCardData } from "../models";
 import { NeCsvRow, buildNeCsvBuffer } from "../ne/csv";
-import { joinAddress, buildSlipNo } from "../ne/order";
+import { buildSlipNo } from "../ne/order";
 import { trySubmitCard } from "../ne/submit";
 import { applyCors } from "./cors";
 import { requireAuth } from "./guard";
@@ -35,10 +35,24 @@ async function fetchPending(): Promise<{ id: string; data: GiftCardData }[]> {
   return snap.docs.map((d) => ({ id: d.id, data: d.data() }));
 }
 
-function fmtDate(ts: unknown): string {
-  const t = ts as { toDate?: () => Date } | undefined;
-  if (t && typeof t.toDate === "function") return t.toDate().toISOString();
-  return "";
+// 受注日: usedAt を JST の「yyyy/MM/dd HH:mm:ss」形式に整形（NEサンプル準拠）。
+function fmtJstDateTime(ts: unknown): string {
+  const t = ts as { toMillis?: () => number } | undefined;
+  if (!t || typeof t.toMillis !== "function") return "";
+  const j = new Date(t.toMillis() + 9 * 60 * 60 * 1000); // JST
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${j.getUTCFullYear()}/${p(j.getUTCMonth() + 1)}/${p(j.getUTCDate())} `
+    + `${p(j.getUTCHours())}:${p(j.getUTCMinutes())}:${p(j.getUTCSeconds())}`;
+}
+
+// 郵便番号・電話番号: 数字のみ（ハイフン等を除去）。
+function digitsOnly(s: string | undefined): string {
+  return (s || "").replace(/[^0-9]/g, "");
+}
+
+// 配達希望日: "YYYY-MM-DD" → "yyyy/MM/dd"（未指定は空）。
+function slashDate(s: string | undefined): string {
+  return s ? s.replace(/-/g, "/") : "";
 }
 
 /**
@@ -56,33 +70,32 @@ export const adminExportNeCsv = onRequest(HTTP_OPTIONS, async (req, res) => {
   try {
     const pending = await fetchPending();
 
-    // 商品・種別名をまとめて解決（N+1回避）。
+    // 商品をまとめて解決（N+1回避）。
     const productIds = [...new Set(pending.map((p) => p.data.selectedProductId).filter(Boolean) as string[])];
-    const typeIds = [...new Set(pending.map((p) => p.data.cardTypeId).filter(Boolean))];
     const productSnaps = productIds.length ? await db.getAll(...productIds.map((id) => selectableProductsRef.doc(id))) : [];
-    const typeSnaps = typeIds.length ? await db.getAll(...typeIds.map((id) => giftCardTypesRef.doc(id))) : [];
     const productById = new Map(productSnaps.map((s) => [s.id, s.data()]));
-    const typeById = new Map(typeSnaps.map((s) => [s.id, s.data()]));
 
     const rows: NeCsvRow[] = pending.map(({ data }) => {
       const prod = data.selectedProductId ? productById.get(data.selectedProductId) : undefined;
-      const type = typeById.get(data.cardTypeId);
       const a = data.shippingAddress;
+      // 住所1＝都道府県＋市区町村番地（必須・空にしない）、住所2＝建物。gift-systemの address は
+      // 「市区町村・番地」を1フィールドで持つため、住所1に都道府県＋address、住所2に building を入れる。
+      const address1 = `${a?.prefecture || ""}${a?.address || ""}`;
+      const address2 = a?.building || "";
       return {
         slipNo: buildSlipNo(data.token), // 店舗伝票番号（NE_SLIP_PREFIX + token / 既定は token そのまま）
-        orderDate: fmtDate(data.usedAt).slice(0, 10), // 受注日は日付のみ（YYYY-MM-DD）
+        orderDate: fmtJstDateTime(data.usedAt), // 受注日 yyyy/MM/dd HH:mm:ss（JST）
+        postalCode: digitsOnly(a?.postalCode), // ハイフンなし数字
+        address1,
+        address2,
         name: a?.name || "",
         nameKana: a?.nameKana || "",
-        postalCode: a?.postalCode || "",
-        address: a ? joinAddress(a) : "", // 都道府県+市区町村番地+建物を結合
-        phone: a?.phone || "",
+        phone: digitsOnly(a?.phone), // ハイフンなし数字
         email: data.recipientEmail || "",
         productName: prod?.name || "",
         neProductCode: prod?.neProductCode || "",
-        quantity: NE_FIXED.QUANTITY,
-        deliveryDate: data.deliveryDate || "",
-        deliveryTime: data.deliveryTime || "",
-        cardTypeName: type?.name || data.cardTypeId,
+        deliveryDate: slashDate(data.deliveryDate), // yyyy/MM/dd（未指定は空）
+        deliveryTime: data.deliveryTime || "", // 列側で「時間帯指定[○○]」へ整形
         memo: data.memo || "",
       };
     });

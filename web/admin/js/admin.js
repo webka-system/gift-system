@@ -20,7 +20,7 @@ import {
 } from "./db.js";
 import { uploadProductImage } from "./storage.js";
 import { neStatusInfo, statusBadgeHtml } from "./status.js";
-import { shortToken, filterCards, LOT_NONE } from "./cards-filter.js";
+import { filterCards, LOT_NONE } from "./cards-filter.js";
 import { TOKEN, PRODUCT, PREFECTURES, DELIVERY, NE_STATUS } from "/shared/constants.js";
 
 // ===== 小さなユーティリティ =====
@@ -664,7 +664,7 @@ async function renderCards() {
   const cardTypeId = $("#cards-type-select").value || undefined;
   const status = $("#cards-status-select").value || undefined;
   const tbody = $("#cards-tbody");
-  tableLoading(tbody, 8);
+  tableLoading(tbody, 7);
   cardsCache = await listCards({ cardTypeId, status });
   populateLotFilter();
   applyCardFilters();
@@ -723,28 +723,28 @@ function applyCardFilters() {
 
   tbody.innerHTML = "";
   if (rows.length === 0) {
-    tableEmpty(tbody, 8, cardsCache.length === 0
+    tableEmpty(tbody, 7, cardsCache.length === 0
       ? "該当するカードがありません。"
       : "検索・絞り込み条件に一致するカードがありません。");
     return;
   }
+  // 一覧は要点だけ（生成→状態→種別→受け取り者名→使用日時→memo→操作）。
+  // トークン・受け取り者URL の全文は詳細ビューと「URLコピー」で参照できるよう一覧からは外す。
   for (const c of rows) {
     const url = receiveUrl(c.token);
     const gen = c.generatedAt ? fmtDate(c.generatedAt) : "不明";
+    const name = c.shippingAddress?.name || "—";
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="mono small col-token" title="${esc(c.token)}">${esc(shortToken(c.token))}</td>
-      <td title="${esc(typeName(c.cardTypeId))}">${esc(typeName(c.cardTypeId))}</td>
-      <td class="status-cell">${statusBadgeHtml(c)}</td>
-      <td class="url-cell">
-        <a href="${esc(url)}" target="_blank" rel="noopener" title="${esc(url)}">${esc(url)}</a>
-        <button class="copy-btn" data-act="copy-url" data-url="${esc(url)}" title="URLをコピー">コピー</button>
-      </td>
-      <td>${fmtDate(c.usedAt)}</td>
       <td class="small" title="${esc(gen)}">${esc(gen)}</td>
+      <td class="status-cell">${statusBadgeHtml(c)}</td>
+      <td class="ellip" title="${esc(typeName(c.cardTypeId))}">${esc(typeName(c.cardTypeId))}</td>
+      <td class="ellip" title="${esc(name)}">${esc(name)}</td>
+      <td class="small">${fmtDate(c.usedAt)}</td>
       <td><input class="memo-input" data-id="${c.id}" value="${esc(c.memo)}" placeholder="受注番号など"></td>
       <td class="row-actions">
         <button data-act="detail" data-id="${c.id}">詳細</button>
+        <button data-act="copy-url" data-url="${esc(url)}" title="受け取り者URLをコピー">URLコピー</button>
         <button data-act="save-memo" data-id="${c.id}">memo保存</button>
       </td>`;
     tbody.appendChild(tr);

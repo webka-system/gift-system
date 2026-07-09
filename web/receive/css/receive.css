@@ -11,6 +11,9 @@
   --sel: #eff4ff;
 }
 * { box-sizing: border-box; }
+/* hidden 属性は常に非表示にする（.product-modal 等が display:flex を持っていても勝つ）。
+   これが無いと商品詳細モーダルの hidden 切替が効かず、閉じられなくなる（暗転フリーズの原因）。 */
+[hidden] { display: none !important; }
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
@@ -85,7 +88,8 @@ h2 { font-size: 1.05rem; margin: 1.75rem 0 .75rem; }
   position: relative;
   background: var(--bg); width: 100%; max-width: 560px;
   max-height: 92vh; overflow-y: auto;
-  border-radius: 16px 16px 0 0; padding: 1rem 1.25rem 1.5rem;
+  border-radius: 16px 16px 0 0;
+  padding: 1rem 1.25rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
 }
 .pm-close {
   position: absolute; top: .5rem; right: .6rem; z-index: 2;

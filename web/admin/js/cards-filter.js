@@ -24,15 +24,24 @@ export function cardMatchesQuery(c, q) {
   return hay.includes(q);
 }
 
+// ロット（生成バッチ）絞り込みで「生成日時不明（batchId 無し）」を表す番兵値。
+export const LOT_NONE = "__none__";
+
 /**
- * NE投入状態フィルタ＋テキスト検索でカード配列を絞り込む。
+ * NE投入状態＋ロット＋テキスト検索でカード配列を絞り込む。
  *   - neStatus: "" なら無条件。値があれば c.neStatus 完全一致（未使用カードは neStatus 無し＝除外）。
+ *   - batchId: "" なら無条件。LOT_NONE なら batchId 無しの既存カード。値なら c.batchId 完全一致。
  *   - query: 前後空白除去＋小文字化して部分一致。
  */
-export function filterCards(cards, { neStatus = "", query = "" } = {}) {
+export function filterCards(cards, { neStatus = "", batchId = "", query = "" } = {}) {
   const q = String(query || "").trim().toLowerCase();
   let rows = Array.isArray(cards) ? cards : [];
   if (neStatus) rows = rows.filter((c) => c.neStatus === neStatus);
+  if (batchId) {
+    rows = batchId === LOT_NONE
+      ? rows.filter((c) => !c.batchId)
+      : rows.filter((c) => c.batchId === batchId);
+  }
   if (q) rows = rows.filter((c) => cardMatchesQuery(c, q));
   return rows;
 }

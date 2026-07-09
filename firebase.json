@@ -41,6 +41,8 @@
       { "source": "/api/neCallback", "function": { "functionId": "neCallback", "region": "asia-northeast1" } },
       { "source": "/api/neCallbackTest", "function": { "functionId": "neCallbackTest", "region": "asia-northeast1" } },
       { "source": "/api/adminExportUrlXlsx", "function": { "functionId": "adminExportUrlXlsx", "region": "asia-northeast1" } },
+      { "source": "/api/adminUpdateGiftCard", "function": { "functionId": "adminUpdateGiftCard", "region": "asia-northeast1" } },
+      { "source": "/api/adminResetGiftCard", "function": { "functionId": "adminResetGiftCard", "region": "asia-northeast1" } },
       { "source": "/g/**", "destination": "/receive/index.html" },
       { "source": "/admin/**", "destination": "/admin/index.html" }
     ]

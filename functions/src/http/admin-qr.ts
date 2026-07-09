@@ -72,6 +72,10 @@ export const adminGenerateGiftCards = onRequest(HTTP_OPTIONS, async (req, res) =
     return;
   }
 
+  // このリクエスト（一括生成）を1ロットとして識別する batchId。ロット絞り込み・突合に使う。
+  const batchId = generateCardToken();
+  const generatedAt = FieldValue.serverTimestamp() as unknown as FirebaseFirestore.Timestamp;
+
   // チャンク分割して書き込む（各バッチ最大500件）。
   let created = 0;
   try {
@@ -87,6 +91,8 @@ export const adminGenerateGiftCards = onRequest(HTTP_OPTIONS, async (req, res) =
           memo: "",
           printed: false, // 未印刷。印刷用PDF出力（?markPrinted=1）で true になる。
           createdAt: FieldValue.serverTimestamp() as unknown as FirebaseFirestore.Timestamp,
+          generatedAt, // ロット管理: 生成日時（バッチ内は同一）。
+          batchId,     // ロット管理: 同一の一括生成をまとめる識別子。
         });
       }
       await batch.commit();
@@ -104,6 +110,6 @@ export const adminGenerateGiftCards = onRequest(HTTP_OPTIONS, async (req, res) =
     return;
   }
 
-  logger.info("adminGenerateGiftCards: created", { cardTypeId, created });
-  res.status(200).json({ ok: true, created });
+  logger.info("adminGenerateGiftCards: created", { cardTypeId, created, batchId });
+  res.status(200).json({ ok: true, created, batchId });
 });

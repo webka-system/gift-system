@@ -211,14 +211,15 @@ button:disabled { opacity: .5; cursor: default; }
 /* ===== QR一覧テーブル（table-layout:fixed で列幅を固定し、長い値でも枠が崩れない） ===== */
 /* 狭い画面でも列が潰れないよう、テーブルは最小幅を持ちラッパ内で横スクロールさせる。 */
 .table-scroll { overflow-x: auto; }
-.cards-table { table-layout: fixed; min-width: 900px; }
+.cards-table { table-layout: fixed; min-width: 1040px; }
 .cards-table th, .cards-table td { overflow: hidden; }
 .cards-table .col-token { width: 96px; }
 .cards-table .col-type { width: 104px; }
 .cards-table .col-status { width: 132px; }
 .cards-table .col-url { width: auto; }
-.cards-table .col-date { width: 136px; }
-.cards-table .col-memo { width: 150px; }
+.cards-table .col-date { width: 130px; }
+.cards-table .col-gen { width: 130px; }
+.cards-table .col-memo { width: 140px; }
 .cards-table .col-actions { width: 140px; }
 /* トークン（短縮表示）と種別は1行省略。全文は title 属性でツールチップ表示。 */
 .cards-table td.col-token,
@@ -323,6 +324,20 @@ button:disabled { opacity: .5; cursor: default; }
 .gallery-empty { padding: 2rem; text-align: center; }
 .set-list { margin: 0; padding-left: 1.1rem; }
 .set-list li { margin: .15rem 0; }
+
+/* ===== 受注編集フォーム / 管理者操作 / 履歴（詳細モーダル内） ===== */
+.edit-form { display: flex; flex-direction: column; gap: .6rem; }
+.edit-form label { display: flex; flex-direction: column; gap: .25rem; font-size: .85rem; }
+.edit-form input, .edit-form select { width: 100%; }
+.detail-ops { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .9rem; }
+.danger-btn { background: #fff; color: var(--danger); border: 1px solid var(--danger); }
+.danger-btn:hover { background: #fef2f2; }
+.ne-warn {
+  background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
+  border-radius: 8px; padding: .6rem .75rem; font-size: .85rem; margin-bottom: .75rem;
+}
+.history-item { border: 1px solid var(--border); border-radius: 8px; padding: .6rem .75rem; margin-bottom: .6rem; }
+.history-head { font-weight: 600; font-size: .85rem; margin-bottom: .35rem; }
 
 @media (max-width: 640px) {
   .form-grid { grid-template-columns: 1fr; }

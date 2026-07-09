@@ -15,101 +15,18 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 import { FieldValue } from "firebase-admin/firestore";
-import { CARD_STATUS, NE_STATUS, DELIVERY } from "../config/constants";
+import { CARD_STATUS, NE_STATUS } from "../config/constants";
 import { HTTP_OPTIONS } from "./options";
 import { db, giftCardsRef, giftCardTypesRef, selectableProductsRef } from "../lib/firestore";
 import { ShippingAddress } from "../models";
 import { applyCors } from "./cors";
-
-// 全角カナ（カタカナブロック U+30A0–30FF ＋全角スペース U+3000 ＋半角空白）。氏名カナの形式チェック用。
-const KANA_RE = /^[゠-ヿ\u3000\s]+$/;
-// 簡易メール形式（前後空白なし・@・ドメインにドット）。
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// クライアントの日付操作を信用しないためのサーバ側 JST 基準。
-const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
-
-// ざっくりした業務エラー（HTTPステータスへマップする）。
-class ReceiveError extends Error {
-  constructor(public httpStatus: number, public code: string) {
-    super(code);
-  }
-}
+import {
+  OrderError, validateAddress, validateEmail, validateDeliveryDate, validateDeliveryTime,
+} from "./order-fields";
 
 // クエリ or ボディからトークンを取り出す。
 function tokenOf(raw: unknown): string {
   return typeof raw === "string" ? raw.trim() : "";
-}
-
-// 配送先住所の検証。必須文字列が揃っているかを確認し、正規化して返す。
-function validateAddress(raw: unknown): ShippingAddress {
-  const a = (raw ?? {}) as Record<string, unknown>;
-  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
-  const addr: ShippingAddress = {
-    name: str(a.name),
-    nameKana: str(a.nameKana),
-    postalCode: str(a.postalCode),
-    prefecture: str(a.prefecture),
-    address: str(a.address),
-    phone: str(a.phone),
-  };
-  // building は任意。空なら **フィールド自体を付けない**（undefined を Firestore に書くとエラーになるため）。
-  const building = str(a.building);
-  if (building) addr.building = building;
-  // building 以外は必須。
-  if (!addr.name || !addr.nameKana || !addr.postalCode || !addr.prefecture || !addr.address || !addr.phone) {
-    throw new ReceiveError(400, "invalid_address");
-  }
-  // 氏名カナは全角カナ形式（NEの受注名カナ／発送先カナに必要）。
-  if (!KANA_RE.test(addr.nameKana)) {
-    throw new ReceiveError(400, "invalid_address");
-  }
-  return addr;
-}
-
-// メールアドレスの検証（必須＋形式）。NEの受注メールアドレス（通知宛先）になる。
-// 確認用の再入力欄は廃止したため、形式チェックのみ（1入力）。
-function validateEmail(rawEmail: unknown): string {
-  const email = typeof rawEmail === "string" ? rawEmail.trim() : "";
-  if (!EMAIL_RE.test(email)) {
-    throw new ReceiveError(400, "invalid_email");
-  }
-  return email;
-}
-
-// 指定日を UTC の日付のみ（時刻0）にする。JST基準の「今日」を作るのに使う。
-function jstDateOnly(base: Date): Date {
-  const j = new Date(base.getTime() + JST_OFFSET_MS);
-  return new Date(Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate()));
-}
-
-// 配達希望日の検証（任意）。指定があれば「確定日+MIN_DAYS 〜 +MAX_MONTHS」の範囲か検証する。
-// クライアントの日付操作を信用しないため、範囲はサーバ側(JST)でも必ず確認する。
-function validateDeliveryDate(raw: unknown): string {
-  const s = typeof raw === "string" ? raw.trim() : "";
-  if (!s) return ""; // 未指定（おまかせ）。
-  const mm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (!mm) throw new ReceiveError(400, "invalid_delivery_date");
-  const [y, m, d] = [Number(mm[1]), Number(mm[2]), Number(mm[3])];
-  const picked = new Date(Date.UTC(y, m - 1, d));
-  // 存在しない日付（例: 2-31）はロールオーバーで不一致になるので弾く。
-  if (picked.getUTCFullYear() !== y || picked.getUTCMonth() !== m - 1 || picked.getUTCDate() !== d) {
-    throw new ReceiveError(400, "invalid_delivery_date");
-  }
-  const today = jstDateOnly(new Date());
-  const min = new Date(today); min.setUTCDate(min.getUTCDate() + DELIVERY.MIN_DAYS);
-  const max = new Date(today); max.setUTCMonth(max.getUTCMonth() + DELIVERY.MAX_MONTHS);
-  if (picked < min || picked > max) throw new ReceiveError(400, "invalid_delivery_date");
-  return s;
-}
-
-// 配達希望時間帯の検証（任意）。指定があれば許可された5区分のいずれかであること。
-function validateDeliveryTime(raw: unknown): string {
-  const s = typeof raw === "string" ? raw.trim() : "";
-  if (!s) return ""; // 未指定（おまかせ）。
-  if (!(DELIVERY.TIME_SLOTS as readonly string[]).includes(s)) {
-    throw new ReceiveError(400, "invalid_delivery_time");
-  }
-  return s;
 }
 
 /**
@@ -204,7 +121,7 @@ export const receiveConfirm = onRequest(HTTP_OPTIONS, async (req, res) => {
     deliveryDate = validateDeliveryDate(body.deliveryDate);
     deliveryTime = validateDeliveryTime(body.deliveryTime);
   } catch (e) {
-    if (e instanceof ReceiveError) { res.status(e.httpStatus).json({ ok: false, code: e.code }); return; }
+    if (e instanceof OrderError) { res.status(e.httpStatus).json({ ok: false, code: e.code }); return; }
     throw e;
   }
 
@@ -212,19 +129,19 @@ export const receiveConfirm = onRequest(HTTP_OPTIONS, async (req, res) => {
     await db.runTransaction(async (tx) => {
       // --- 読み取りはすべて書き込みより前に行う（Firestoreトランザクション制約）---
       const cardSnap = await tx.get(giftCardsRef.where("token", "==", token).limit(1));
-      if (cardSnap.empty) throw new ReceiveError(404, "not_found");
+      if (cardSnap.empty) throw new OrderError(404, "not_found");
       const cardDoc = cardSnap.docs[0];
       const card = cardDoc.data();
 
       // 二重確定防止の要: この瞬間に unused であることを検証する。
-      if (card.status !== CARD_STATUS.UNUSED) throw new ReceiveError(409, "already_used");
+      if (card.status !== CARD_STATUS.UNUSED) throw new OrderError(409, "already_used");
 
       // 選択商品の妥当性: 実在し、同じ種別に属し、有効であること（1カード1商品 / design.md 3.3）。
       const prodDoc = await tx.get(selectableProductsRef.doc(selectedProductId));
-      if (!prodDoc.exists) throw new ReceiveError(400, "invalid_product");
+      if (!prodDoc.exists) throw new OrderError(400, "invalid_product");
       const prod = prodDoc.data()!;
       if (prod.cardTypeId !== card.cardTypeId || prod.active === false) {
-        throw new ReceiveError(400, "invalid_product");
+        throw new OrderError(400, "invalid_product");
       }
 
       // --- 書き込み: 使用済み化＋確定内容の記録。NE投入は第6でのため neStatus は pending（未投入）---
@@ -242,7 +159,7 @@ export const receiveConfirm = onRequest(HTTP_OPTIONS, async (req, res) => {
       tx.update(cardDoc.ref, update);
     });
   } catch (err) {
-    if (err instanceof ReceiveError) {
+    if (err instanceof OrderError) {
       // 業務エラーは想定内。409/404/400 をそのまま返す（ログは軽く）。
       if (err.httpStatus >= 500) logger.error("receiveConfirm error", { code: err.code });
       res.status(err.httpStatus).json({ ok: false, code: err.code });

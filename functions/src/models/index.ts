@@ -90,6 +90,10 @@ export interface GiftCardData {
   printed?: boolean;
   /** 印刷用PDFに出力した日時。 */
   printedAt?: Timestamp;
+  /** 生成日時（ロット管理用。生成バッチの時刻）。既存カードには無い場合がある（後方互換）。 */
+  generatedAt?: Timestamp;
+  /** 生成バッチID（同一の一括生成をまとめる識別子。ロット絞り込み用）。既存カードには無い場合がある。 */
+  batchId?: string;
 
   // ── 以下は使用（受け取り者の確定）時に書き込まれる ──
   /** 受け取り者が選んだ商品。 */
@@ -112,5 +116,38 @@ export interface GiftCardData {
   neLastError?: string;
   /** NE自動投入の試行回数（リトライ運用の目安）。 */
   neAttempts?: number;
+
+  // ── 管理者による「やり直し」（未使用へ戻す）で積まれる過去の入力履歴 ──
+  /** 過去に確定された入力の履歴（やり直しのたびに、戻す直前の内容を push）。 */
+  previousSubmissions?: PreviousSubmission[];
+  /** 直近の管理者編集の日時（監査用）。 */
+  lastEditedAt?: Timestamp;
+  /** 直近に編集した管理者のメール（監査用）。 */
+  lastEditedBy?: string;
 }
 export type GiftCard = WithId<GiftCardData>;
+
+/**
+ * 過去の確定入力のスナップショット（管理者が「未使用へ戻す」際に記録）。
+ * カード本体はクリアするが、いつ何が入力されたかを履歴として残して後から参照できるようにする。
+ */
+export interface PreviousSubmission {
+  /** 選ばれていた商品ID。 */
+  selectedProductId?: string;
+  /** 入力されていた配送先住所。 */
+  shippingAddress?: ShippingAddress;
+  /** 入力されていたメールアドレス。 */
+  recipientEmail?: string;
+  /** 配達希望日。 */
+  deliveryDate?: string;
+  /** 配達希望時間帯。 */
+  deliveryTime?: string;
+  /** その確定の日時（元の usedAt）。 */
+  usedAt?: Timestamp;
+  /** 戻した時点の NE 投入状態。 */
+  neStatus?: NeStatus;
+  /** 未使用へ戻した日時。 */
+  resetAt: Timestamp;
+  /** 未使用へ戻した管理者のメール。 */
+  resetBy?: string;
+}

@@ -16,12 +16,12 @@ import { onAuth, login, logout, idToken, loginErrorMessage } from "./auth.js";
 import {
   listCardTypes, createCardType, updateCardType, setCardTypeActive,
   listProductsByType, createProduct, updateProduct, deleteProduct,
-  listCards, updateCardMemo, getProductById, CARD_STATUS,
+  listCards, updateCardMemo, getProductById, getCard, CARD_STATUS,
 } from "./db.js";
 import { uploadProductImage } from "./storage.js";
 import { neStatusInfo, statusBadgeHtml } from "./status.js";
-import { shortToken, filterCards } from "./cards-filter.js";
-import { TOKEN, PRODUCT } from "/shared/constants.js";
+import { shortToken, filterCards, LOT_NONE } from "./cards-filter.js";
+import { TOKEN, PRODUCT, PREFECTURES, DELIVERY, NE_STATUS } from "/shared/constants.js";
 
 // ===== 小さなユーティリティ =====
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -271,6 +271,7 @@ function wireForms() {
   $("#cards-type-select").addEventListener("change", renderCards);
   $("#cards-status-select").addEventListener("change", renderCards);
   $("#cards-ne-select").addEventListener("change", applyCardFilters);
+  $("#cards-lot-select").addEventListener("change", applyCardFilters);
   $("#cards-search").addEventListener("input", applyCardFilters);
   $("#cards-tbody").addEventListener("click", onCardsClick);
 
@@ -663,9 +664,44 @@ async function renderCards() {
   const cardTypeId = $("#cards-type-select").value || undefined;
   const status = $("#cards-status-select").value || undefined;
   const tbody = $("#cards-tbody");
-  tableLoading(tbody, 7);
+  tableLoading(tbody, 8);
   cardsCache = await listCards({ cardTypeId, status });
+  populateLotFilter();
   applyCardFilters();
+}
+
+/**
+ * ロット（生成バッチ）絞り込みの選択肢を、取得済みカードから組み立てる。
+ * batchId ごとに生成日時ラベル＋枚数を表示。生成日時不明（batchId 無し）はまとめて1項目。
+ */
+function populateLotFilter() {
+  const sel = $("#cards-lot-select");
+  const prev = sel.value;
+  const byBatch = new Map(); // batchId -> { generatedAt, count }
+  let noneCount = 0;
+  for (const c of cardsCache) {
+    if (!c.batchId) { noneCount++; continue; }
+    const e = byBatch.get(c.batchId) || { generatedAt: c.generatedAt, count: 0 };
+    e.count++;
+    byBatch.set(c.batchId, e);
+  }
+  // 生成日時の新しい順に並べる。
+  const entries = [...byBatch.entries()].sort((a, b) => tsMillis(b[1].generatedAt) - tsMillis(a[1].generatedAt));
+  let html = `<option value="">すべて</option>`;
+  for (const [batchId, e] of entries) {
+    html += `<option value="${esc(batchId)}">${esc(fmtDate(e.generatedAt) || "不明")}（${e.count}枚）</option>`;
+  }
+  if (noneCount) html += `<option value="${LOT_NONE}">生成日時不明（${noneCount}枚）</option>`;
+  sel.innerHTML = html;
+  if (prev) sel.value = prev;
+}
+
+/** Firestore Timestamp → ミリ秒（ソート用。無ければ0）。 */
+function tsMillis(ts) {
+  if (!ts) return 0;
+  if (typeof ts.toMillis === "function") return ts.toMillis();
+  if (typeof ts.toDate === "function") return ts.toDate().getTime();
+  return 0;
 }
 
 /**
@@ -675,10 +711,11 @@ async function renderCards() {
 function applyCardFilters() {
   const tbody = $("#cards-tbody");
   const neStatus = $("#cards-ne-select").value;               // "" or pending/submitting/...
+  const batchId = $("#cards-lot-select").value;               // "" or batchId or LOT_NONE
   const query = $("#cards-search").value;
   const typeName = (id) => cardTypesCache.find((t) => t.id === id)?.name || id;
 
-  const rows = filterCards(cardsCache, { neStatus, query });
+  const rows = filterCards(cardsCache, { neStatus, batchId, query });
 
   $("#cards-count").textContent = cardsCache.length
     ? `${rows.length} / ${cardsCache.length} 件`
@@ -686,13 +723,14 @@ function applyCardFilters() {
 
   tbody.innerHTML = "";
   if (rows.length === 0) {
-    tableEmpty(tbody, 7, cardsCache.length === 0
+    tableEmpty(tbody, 8, cardsCache.length === 0
       ? "該当するカードがありません。"
       : "検索・絞り込み条件に一致するカードがありません。");
     return;
   }
   for (const c of rows) {
     const url = receiveUrl(c.token);
+    const gen = c.generatedAt ? fmtDate(c.generatedAt) : "不明";
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="mono small col-token" title="${esc(c.token)}">${esc(shortToken(c.token))}</td>
@@ -703,6 +741,7 @@ function applyCardFilters() {
         <button class="copy-btn" data-act="copy-url" data-url="${esc(url)}" title="URLをコピー">コピー</button>
       </td>
       <td>${fmtDate(c.usedAt)}</td>
+      <td class="small" title="${esc(gen)}">${esc(gen)}</td>
       <td><input class="memo-input" data-id="${c.id}" value="${esc(c.memo)}" placeholder="受注番号など"></td>
       <td class="row-actions">
         <button data-act="detail" data-id="${c.id}">詳細</button>
@@ -804,6 +843,8 @@ async function openCardDetail(cardId) {
       <h3>カード</h3>
       ${addrRow("種別", type ? `${type.name}（${yen(type.price)}）` : card.cardTypeId)}
       ${addrRow("トークン", card.token)}
+      ${addrRow("生成日時", card.generatedAt ? fmtDate(card.generatedAt) : "不明")}
+      ${card.batchId ? addrRow("ロットID", card.batchId) : ""}
       <div class="detail-row">
         <span class="detail-label">状態</span>
         <span class="detail-value status-cell">${statusBadgeHtml(card)}</span>
@@ -851,7 +892,53 @@ async function openCardDetail(cardId) {
       <h3>memo（管理者記入欄）</h3>
       <textarea id="detail-memo" class="detail-memo" rows="2" placeholder="受注番号など突合用">${esc(card.memo)}</textarea>
       <div><button id="detail-memo-save" type="button">memoを保存</button></div>
-    </section>`;
+    </section>
+
+    ${used ? `<section class="detail-section">
+      <h3>管理者操作</h3>
+      ${neWarnHtml(card)}
+      <div class="detail-ops">
+        <button data-act="card-edit" type="button">受注内容を編集</button>
+        <button data-act="card-reset" type="button" class="danger-btn">未使用に戻す（受け取り者に再入力させる）</button>
+      </div>
+    </section>` : ""}
+
+    ${historyHtml(card)}`;
+}
+
+// NE 投入済み（投入済/CSV出力済/投入中）とみなす状態。編集・やり直し時に警告を出す対象。
+const NE_SENT = new Set([NE_STATUS.SUBMITTED, NE_STATUS.CSV_EXPORTED, NE_STATUS.SUBMITTING]);
+/** カードが NE 投入済みかどうか（編集・やり直しで警告する判定）。 */
+function isNeSent(card) {
+  return NE_SENT.has(card.neStatus);
+}
+/** NE 投入済みカードの警告バナー（未投入なら空）。 */
+function neWarnHtml(card) {
+  if (!isNeSent(card)) return "";
+  return `<div class="ne-warn">⚠ このカードは既にネクストエンジンに投入済みです。編集／やり直しをしても、
+    NE側の受注は自動では更新されません。NE側も手動で修正してください。</div>`;
+}
+/** 過去の入力履歴（previousSubmissions）の表示。無ければ空。 */
+function historyHtml(card) {
+  const hist = Array.isArray(card.previousSubmissions) ? card.previousSubmissions : [];
+  if (!hist.length) return "";
+  // 新しい履歴を上に。
+  const rows = [...hist].reverse().map((h, idx) => {
+    const a = h.shippingAddress || {};
+    return `<div class="history-item">
+      <div class="history-head">#${hist.length - idx}　戻した日時: ${esc(fmtDate(h.resetAt))}${h.resetBy ? `（${esc(h.resetBy)}）` : ""}</div>
+      ${addrRow("確定日時", fmtDate(h.usedAt))}
+      ${addrRow("氏名", a.name)}
+      ${addrRow("メール", h.recipientEmail)}
+      ${addrRow("商品ID", h.selectedProductId)}
+      ${addrRow("配達希望", [h.deliveryDate, h.deliveryTime].filter(Boolean).join(" ") || "指定なし")}
+      ${addrRow("戻す前のNE状態", h.neStatus ? neStatusInfo(h.neStatus).label : "")}
+    </div>`;
+  }).join("");
+  return `<section class="detail-section">
+    <h3>過去の入力履歴（${hist.length}件）</h3>
+    ${rows}
+  </section>`;
 }
 
 /** 詳細モーダルを閉じる。 */
@@ -860,11 +947,12 @@ function closeCardDetail() {
   detailCardId = null;
 }
 
-/** 詳細モーダル内のクリック（コピー・memo保存）。 */
+/** 詳細モーダル内のクリック（コピー・memo保存・編集・やり直し）。 */
 async function onDetailClick(e) {
   const btn = e.target.closest("button");
   if (!btn) return;
-  if (btn.dataset.act === "detail-copy-url") {
+  const act = btn.dataset.act;
+  if (act === "detail-copy-url") {
     await copyToClipboard(btn.dataset.url);
     return;
   }
@@ -886,7 +974,163 @@ async function onDetailClick(e) {
     } finally {
       btn.disabled = false;
     }
+    return;
   }
+  if (act === "card-edit") { await openCardEditForm(); return; }
+  if (act === "edit-cancel") { openCardDetail(detailCardId); return; }
+  if (act === "edit-save") { await onEditSave(btn); return; }
+  if (act === "card-reset") { await onCardReset(btn); return; }
+}
+
+// ===== 管理者による受注編集・やり直し =====
+// クライアント側の軽い事前チェック（本チェックはサーバの order-fields.ts で確実に行う）。
+const KANA_RE_ADMIN = /^[゠-ヿ　\s]+$/;
+const EMAIL_RE_ADMIN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** 配達希望日の選択可能範囲（今日基準。受け取り者フォームと同じ）。 */
+function adminDeliveryBounds() {
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const min = new Date(); min.setDate(min.getDate() + DELIVERY.MIN_DAYS);
+  const max = new Date(); max.setMonth(max.getMonth() + DELIVERY.MAX_MONTHS);
+  return { min: ymd(min), max: ymd(max) };
+}
+
+/** 詳細モーダルを編集フォームに切り替える（現在の detailCardId のカードを編集）。 */
+async function openCardEditForm() {
+  const card = cardsCache.find((c) => c.id === detailCardId);
+  if (!card) return;
+  const body = $("#detail-body");
+  body.innerHTML = `<div class="loading-cell">${SPINNER}読み込み中…</div>`;
+  // 種別に紐づく商品を選択肢に（種別をまたがない）。
+  let products = [];
+  try { products = await listProductsByType(card.cardTypeId); } catch (_) { /* 空で続行 */ }
+  if (detailCardId !== card.id) return;
+
+  const a = card.shippingAddress || {};
+  const { min, max } = adminDeliveryBounds();
+  const prodOptions = products.map((p) =>
+    `<option value="${esc(p.id)}"${p.id === card.selectedProductId ? " selected" : ""}>${esc(p.name)}${p.active ? "" : "（無効）"}</option>`).join("");
+  const prefOptions = `<option value="">選択してください</option>` +
+    PREFECTURES.map((pr) => `<option value="${esc(pr)}"${pr === a.prefecture ? " selected" : ""}>${esc(pr)}</option>`).join("");
+  const timeOptions = `<option value="">指定なし</option>` +
+    DELIVERY.TIME_SLOTS.map((s) => `<option value="${esc(s)}"${s === card.deliveryTime ? " selected" : ""}>${esc(s)}</option>`).join("");
+
+  body.innerHTML = `
+    <section class="detail-section">
+      <h3>受注内容の編集</h3>
+      ${neWarnHtml(card)}
+      <div class="edit-form">
+        <label>選択商品<select id="edit-product">${prodOptions}</select></label>
+        <label>氏名<input id="edit-name" type="text" value="${esc(a.name)}"></label>
+        <label>氏名カナ<input id="edit-kana" type="text" value="${esc(a.nameKana)}"></label>
+        <label>メールアドレス<input id="edit-email" type="email" value="${esc(card.recipientEmail)}"></label>
+        <label>郵便番号<input id="edit-postal" type="text" inputmode="numeric" value="${esc(a.postalCode)}"></label>
+        <label>都道府県<select id="edit-prefecture">${prefOptions}</select></label>
+        <label>住所（市区町村・番地）<input id="edit-address" type="text" value="${esc(a.address)}"></label>
+        <label>建物名・部屋番号<input id="edit-building" type="text" value="${esc(a.building)}"></label>
+        <label>電話番号<input id="edit-phone" type="tel" value="${esc(a.phone)}"></label>
+        <label>配達希望日<input id="edit-delivery-date" type="date" min="${min}" max="${max}" value="${esc(card.deliveryDate)}"></label>
+        <label>配達希望時間帯<select id="edit-delivery-time">${timeOptions}</select></label>
+      </div>
+      <div class="detail-ops">
+        <button data-act="edit-save" type="button">保存する</button>
+        <button data-act="edit-cancel" type="button" class="ghost">キャンセル</button>
+      </div>
+    </section>`;
+}
+
+/** 編集フォームの保存（確認ダイアログ → adminUpdateGiftCard）。 */
+async function onEditSave(btn) {
+  const id = detailCardId;
+  const card = cardsCache.find((c) => c.id === id);
+  if (!card) return;
+  const val = (sel) => $(sel).value.trim();
+  const shippingAddress = {
+    name: val("#edit-name"), nameKana: val("#edit-kana"), postalCode: val("#edit-postal"),
+    prefecture: val("#edit-prefecture"), address: val("#edit-address"),
+    building: val("#edit-building"), phone: val("#edit-phone"),
+  };
+  const selectedProductId = val("#edit-product");
+  const email = val("#edit-email");
+  const deliveryDate = val("#edit-delivery-date");
+  const deliveryTime = val("#edit-delivery-time");
+
+  // 軽い事前チェック（本番はサーバで検証）。
+  if (!selectedProductId) return flash("商品を選択してください。", "error");
+  if (!shippingAddress.name || !shippingAddress.postalCode || !shippingAddress.prefecture
+      || !shippingAddress.address || !shippingAddress.phone) return flash("必須項目を入力してください。", "error");
+  if (!KANA_RE_ADMIN.test(shippingAddress.nameKana)) return flash("氏名カナは全角カナで入力してください。", "error");
+  if (!EMAIL_RE_ADMIN.test(email)) return flash("メールアドレスの形式をご確認ください。", "error");
+  if (deliveryDate) {
+    const { min, max } = adminDeliveryBounds();
+    if (deliveryDate < min || deliveryDate > max) return flash("配達希望日は指定できる範囲外です。", "error");
+  }
+
+  const warn = isNeSent(card) ? "\n\n※このカードはNE投入済みです。NE側は自動更新されないため手動で修正してください。" : "";
+  if (!confirm(`この内容で保存しますか？${warn}`)) return;
+
+  btn.disabled = true;
+  try {
+    const res = await authorizedFetch("/api/adminUpdateGiftCard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cardId: id, selectedProductId, shippingAddress, email, deliveryDate, deliveryTime }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(editErrorMessage(data.code, res.status));
+    flash("受注内容を保存しました。");
+    await refreshDetailCard(id);
+  } catch (err) {
+    flash(`保存に失敗しました: ${err?.message || err}`, "error");
+    btn.disabled = false;
+  }
+}
+
+/** 使用済み→未使用へ戻す（確認ダイアログ → adminResetGiftCard）。 */
+async function onCardReset(btn) {
+  const id = detailCardId;
+  const card = cardsCache.find((c) => c.id === id);
+  if (!card) return;
+  const warn = isNeSent(card) ? "\n\n※このカードはNE投入済みです。NE側は自動更新されないため手動で修正してください。" : "";
+  if (!confirm(`このカードを未使用に戻しますか？現在の入力は履歴として残り、受け取り者が同じURLから再入力できるようになります。${warn}`)) return;
+
+  btn.disabled = true;
+  try {
+    const res = await authorizedFetch("/api/adminResetGiftCard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cardId: id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(editErrorMessage(data.code, res.status));
+    flash("未使用に戻しました。履歴を保存しました。");
+    await refreshDetailCard(id);
+  } catch (err) {
+    flash(`やり直しに失敗しました: ${err?.message || err}`, "error");
+    btn.disabled = false;
+  }
+}
+
+/** 編集・やり直しのエラーコードを日本語に。 */
+function editErrorMessage(code, status) {
+  return ({
+    invalid_address: "住所・カナの入力をご確認ください。",
+    invalid_email: "メールアドレスの形式をご確認ください。",
+    invalid_delivery_date: "配達希望日が範囲外です。",
+    invalid_delivery_time: "配達希望時間帯が不正です。",
+    invalid_product: "選択商品が不正です（種別違い等）。",
+    not_used: "このカードは使用済みではありません。",
+    not_found: "カードが見つかりません。",
+  })[code] || `HTTP ${status}`;
+}
+
+/** 編集・やり直し後にカードを取り直して、詳細ビューと一覧を最新化する。 */
+async function refreshDetailCard(id) {
+  const fresh = await getCard(id);
+  const i = cardsCache.findIndex((c) => c.id === id);
+  if (fresh && i >= 0) cardsCache[i] = fresh;
+  applyCardFilters();          // 一覧の状態バッジ等を更新。
+  if (detailCardId === id) openCardDetail(id); // 詳細を読み取りビューへ戻す。
 }
 
 // ============================================================

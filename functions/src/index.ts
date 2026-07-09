@@ -49,3 +49,7 @@ export { neCallback, neCallbackTest } from "./http/ne-callback";
 
 // 管理API: 印刷工場入稿用のURL一覧Excel(xlsx)出力（種別/未印刷で対象選択・各行に /g/<token> / design.md 4.1）。
 export { adminExportUrlXlsx } from "./http/admin-export";
+
+// 管理API: 受注内容の直接編集 / 使用済みカードのやり直し（未使用へ戻す・履歴保持）。
+// requireAuth 必須。★新規HTTP関数のため、デプロイ後に Cloud Run で手動「パブリックアクセスを許可」が必要。
+export { adminUpdateGiftCard, adminResetGiftCard } from "./http/admin-card";

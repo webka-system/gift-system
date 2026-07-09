@@ -214,16 +214,15 @@ button:disabled { opacity: .5; cursor: default; }
 /* 一覧は要点だけに絞ったので、通常のPC/10インチ画面（コンテンツ幅≈960px）では横スクロールなしで収まる。
    min-width は極端に狭い画面のための下限（それ未満のときだけ .table-scroll が働く）。 */
 .cards-table { table-layout: fixed; width: 100%; min-width: 720px; }
-.cards-table th, .cards-table td { overflow: hidden; }
 .cards-table .col-gen { width: 128px; }
-.cards-table .col-status { width: 130px; }
-.cards-table .col-type { width: 104px; }
+.cards-table .col-status { width: 148px; }
+.cards-table .col-type { width: 100px; }
 .cards-table .col-name { width: auto; }
 .cards-table .col-used { width: 128px; }
 .cards-table .col-memo { width: 150px; }
 .cards-table .col-actions { width: 168px; }
-/* 種別・受け取り者名は1行省略（全文は title のツールチップ、詳細ビューで参照）。 */
-.cards-table td.ellip { white-space: nowrap; text-overflow: ellipsis; }
+/* 省略が要る列だけクリップ（状態・操作セルには overflow を掛けない＝罫線やバッジが崩れない）。 */
+.cards-table td.ellip { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .cards-table .memo-input { width: 100%; }
 /* 操作列は複数ボタン。狭ければ折り返して縦積みに（枠からはみ出さない）。 */
 .cards-table .row-actions { flex-wrap: wrap; }

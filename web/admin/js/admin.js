@@ -193,9 +193,11 @@ async function renderCardTypes() {
       <td>${yen(t.price)}</td>
       <td>${esc(t.cardProductCode)}</td>
       <td>${t.active ? "有効" : "<span class='muted'>無効</span>"}</td>
-      <td class="row-actions">
-        <button data-act="toggle" data-id="${t.id}">${t.active ? "無効化" : "有効化"}</button>
-        <button data-act="edit" data-id="${t.id}">編集</button>
+      <td>
+        <div class="row-actions">
+          <button data-act="toggle" data-id="${t.id}">${t.active ? "無効化" : "有効化"}</button>
+          <button data-act="edit" data-id="${t.id}">編集</button>
+        </div>
       </td>`;
     tbody.appendChild(tr);
   }
@@ -369,11 +371,13 @@ async function renderProducts() {
       <td>${p.imageUrl ? `<img class="thumb" src="${esc(p.imageUrl)}" alt="">` : ""}</td>
       <td>${esc(p.name)}${extra ? `<div class="muted small">＋画像${extra}枚</div>` : ""}</td>
       <td>${p.active ? "有効" : "<span class='muted'>無効</span>"}</td>
-      <td class="row-actions">
-        <button data-act="product-detail" data-id="${p.id}">詳細</button>
-        <button data-act="edit" data-id="${p.id}">編集</button>
-        <button data-act="toggle" data-id="${p.id}" data-active="${p.active}">${p.active ? "無効化" : "有効化"}</button>
-        <button data-act="delete" data-id="${p.id}">削除</button>
+      <td>
+        <div class="row-actions">
+          <button data-act="product-detail" data-id="${p.id}">詳細</button>
+          <button data-act="edit" data-id="${p.id}">編集</button>
+          <button data-act="toggle" data-id="${p.id}" data-active="${p.active}">${p.active ? "無効化" : "有効化"}</button>
+          <button data-act="delete" data-id="${p.id}">削除</button>
+        </div>
       </td>`;
     tbody.appendChild(tr);
   }
@@ -737,15 +741,17 @@ function applyCardFilters() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="small" title="${esc(gen)}">${esc(gen)}</td>
-      <td class="status-cell">${statusBadgeHtml(c)}</td>
+      <td><span class="status-cell">${statusBadgeHtml(c)}</span></td>
       <td class="ellip" title="${esc(typeName(c.cardTypeId))}">${esc(typeName(c.cardTypeId))}</td>
       <td class="ellip" title="${esc(name)}">${esc(name)}</td>
       <td class="small">${fmtDate(c.usedAt)}</td>
       <td><input class="memo-input" data-id="${c.id}" value="${esc(c.memo)}" placeholder="受注番号など"></td>
-      <td class="row-actions">
-        <button data-act="detail" data-id="${c.id}">詳細</button>
-        <button data-act="copy-url" data-url="${esc(url)}" title="受け取り者URLをコピー">URLコピー</button>
-        <button data-act="save-memo" data-id="${c.id}">memo保存</button>
+      <td>
+        <div class="row-actions">
+          <button data-act="detail" data-id="${c.id}">詳細</button>
+          <button data-act="copy-url" data-url="${esc(url)}" title="受け取り者URLをコピー">URLコピー</button>
+          <button data-act="save-memo" data-id="${c.id}">memo保存</button>
+        </div>
       </td>`;
     tbody.appendChild(tr);
   }

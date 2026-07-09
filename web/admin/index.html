@@ -58,10 +58,10 @@
         <h3>種別の登録 / 編集</h3>
         <form id="type-form" class="form-grid">
           <input id="type-id" type="hidden" />
-          <label>表示名<input id="type-name" type="text" placeholder="3万円ギフトカード" required /></label>
-          <label>価格帯（円）<input id="type-price" type="number" min="0" step="1" placeholder="30000" required /></label>
-          <label>ギフトカード管理商品コード<input id="type-code" type="text" placeholder="CARD-30000" /></label>
-          <label>有効期限（日数・空欄で無期限）<input id="type-expiry" type="number" min="1" step="1" placeholder="例: 90" /></label>
+          <label><span>表示名<span class="req-chip">必須</span></span><input id="type-name" type="text" placeholder="3万円ギフトカード" required /></label>
+          <label><span>価格帯（円）<span class="req-chip">必須</span></span><input id="type-price" type="number" min="0" step="1" placeholder="30000" required /></label>
+          <label><span>ギフトカード管理商品コード<span class="opt-chip">任意</span></span><input id="type-code" type="text" placeholder="CARD-30000" /></label>
+          <label><span>有効期限（日数・空欄で無期限）<span class="opt-chip">任意</span></span><input id="type-expiry" type="number" min="1" step="1" placeholder="例: 90" /></label>
           <button id="type-submit" type="submit">種別を登録</button>
         </form>
       </section>
@@ -81,14 +81,14 @@
         <p class="muted small">選択中の種別に紐づけて登録します（同一商品が複数種別にまたがることはありません）。編集時、メイン画像は選び直したときだけ差し替わります。</p>
         <form id="product-form" class="form-grid">
           <input id="product-id" type="hidden" />
-          <label>商品名<input id="product-name" type="text" required /></label>
-          <label>NE商品コード<input id="product-ne-code" type="text" required /></label>
-          <label class="wide">商品説明<textarea id="product-desc" rows="2"></textarea></label>
-          <label class="wide">セット内容（任意・1行＝1項目の箇条書き）
+          <label><span>商品名<span class="req-chip">必須</span></span><input id="product-name" type="text" required /></label>
+          <label><span>NE商品コード<span class="req-chip">必須</span></span><input id="product-ne-code" type="text" required /></label>
+          <label class="wide"><span>商品説明<span class="opt-chip">任意</span></span><textarea id="product-desc" rows="2"></textarea></label>
+          <label class="wide"><span>セット内容（1行＝1項目の箇条書き）<span class="opt-chip">任意</span></span>
             <textarea id="product-set" rows="4" placeholder="唐揚げ200g&#10;ハンバーグ5個&#10;（1行につき1項目を入力してください）"></textarea>
           </label>
-          <label>メイン画像（サムネ）<input id="product-image" type="file" accept="image/*" /></label>
-          <label>追加画像（任意・最大4枚）<input id="product-add-image-input" type="file" accept="image/*" multiple /></label>
+          <label><span>メイン画像（サムネ）<span class="opt-chip">任意</span></span><input id="product-image" type="file" accept="image/*" /></label>
+          <label><span>追加画像（最大4枚）<span class="opt-chip">任意</span></span><input id="product-add-image-input" type="file" accept="image/*" multiple /></label>
           <div class="wide">
             <div id="product-add-images" class="add-images"></div>
           </div>
@@ -102,8 +102,8 @@
         <h2>QRコード一括生成</h2>
         <p class="muted small">種別を指定して任意個数のQRカードを生成します。トークンはサーバ側で推測不可能な値として発行されます。</p>
         <form id="generate-form" class="form-grid">
-          <label>種別<select id="generate-type-select"></select></label>
-          <label>生成個数<input id="generate-count" type="number" min="1" step="1" placeholder="100" required /></label>
+          <label><span>種別<span class="req-chip">必須</span></span><select id="generate-type-select"></select></label>
+          <label><span>生成個数<span class="req-chip">必須</span></span><input id="generate-count" type="number" min="1" step="1" placeholder="100" required /></label>
           <button id="generate-submit" type="submit">生成する</button>
         </form>
         <p id="generate-result" class="result"></p>

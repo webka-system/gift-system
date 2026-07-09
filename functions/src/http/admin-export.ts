@@ -23,8 +23,21 @@ import { requireAuth } from "./guard";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
+// ロット絞り込みで「生成日時不明（batchId 無し）」を表す番兵値（QR一覧の LOT_NONE と対応）。
+const LOT_NONE = "__none__";
+
+// Firestore Timestamp → JST の日付文字列（YYYY-MM-DD）。生成日フィルタの突合に使う。無ければ null。
+function genDateJst(ts: unknown): string | null {
+  const ms = (ts as { toMillis?: () => number } | undefined)?.toMillis?.();
+  if (typeof ms !== "number") return null;
+  const j = new Date(ms + 9 * 60 * 60 * 1000); // JST
+  return `${j.getUTCFullYear()}-${String(j.getUTCMonth() + 1).padStart(2, "0")}-${String(j.getUTCDate()).padStart(2, "0")}`;
+}
+
 /**
- * GET /api/adminExportUrlXlsx?cardTypeId=...&unprintedOnly=1&markPrinted=1&urlOnly=1
+ * GET /api/adminExportUrlXlsx?cardTypeId=...&batchId=...&generatedDate=YYYY-MM-DD&unprintedOnly=1&markPrinted=1&urlOnly=1
+ *   対象カードの受け取り者URLを xlsx で返す。種別・ロット(batchId)・生成日・未印刷 を組み合わせて絞り込める。
+ *   batchId=__none__ は生成日時不明（batchId 無し）の既存カード。generatedDate は生成日(JST)一致。
  *   res: xlsx（各行に受け取り者URL）。対象0件でも（ヘッダのみ／空の）xlsxを返す。
  */
 export const adminExportUrlXlsx = onRequest(HTTP_OPTIONS, async (req, res) => {
@@ -36,22 +49,29 @@ export const adminExportUrlXlsx = onRequest(HTTP_OPTIONS, async (req, res) => {
   if (!admin) return;
 
   const cardTypeId = typeof req.query.cardTypeId === "string" ? req.query.cardTypeId.trim() : "";
+  const batchId = typeof req.query.batchId === "string" ? req.query.batchId.trim() : "";
+  const generatedDate = typeof req.query.generatedDate === "string" ? req.query.generatedDate.trim() : "";
   const unprintedOnly = req.query.unprintedOnly === "1" || req.query.unprintedOnly === "true";
   const markPrinted = req.query.markPrinted === "1" || req.query.markPrinted === "true";
   const urlOnly = req.query.urlOnly === "1" || req.query.urlOnly === "true" ? true : undefined;
 
   try {
-    // 対象カードを抽出（種別 / 未印刷 でフィルタ）。並び順はメモリ側で createdAt 昇順に安定化。
+    // 対象カードを抽出。種別・未印刷・特定ロットは Firestore の等価フィルタ（複合インデックス不要）。
+    // ロット「不明(__none__)」と生成日はメモリ側で絞り込む（欠落フィールド・JST日付判定のため）。
     let q: FirebaseFirestore.Query<GiftCardData> = giftCardsRef;
     if (cardTypeId) q = q.where("cardTypeId", "==", cardTypeId);
     if (unprintedOnly) q = q.where("printed", "==", false);
+    if (batchId && batchId !== LOT_NONE) q = q.where("batchId", "==", batchId);
     const snap = await q.limit(URL_EXPORT.MAX_ROWS).get();
 
-    const docs = snap.docs.slice().sort((a, b) => {
+    let docs = snap.docs.slice().sort((a, b) => {
       const ta = a.data().createdAt?.toMillis?.() ?? 0;
       const tb = b.data().createdAt?.toMillis?.() ?? 0;
       return ta - tb;
     });
+    // メモリ側フィルタ: ロット不明（batchId 無し）／生成日(JST)一致。後方互換で generatedAt 無しは生成日一致に含めない。
+    if (batchId === LOT_NONE) docs = docs.filter((d) => !d.data().batchId);
+    if (generatedDate) docs = docs.filter((d) => genDateJst(d.data().generatedAt) === generatedDate);
 
     // 種別名をまとめて解決（N+1回避）。
     const typeIds = [...new Set(docs.map((d) => d.data().cardTypeId).filter(Boolean))];
@@ -84,7 +104,7 @@ export const adminExportUrlXlsx = onRequest(HTTP_OPTIONS, async (req, res) => {
     res.set("Content-Type", XLSX_MIME);
     res.set("Content-Disposition", 'attachment; filename="qr-urls.xlsx"');
     res.status(200).send(buf);
-    logger.info("adminExportUrlXlsx", { count: rows.length, cardTypeId: cardTypeId || null, unprintedOnly, markPrinted, urlOnly: !!urlOnly });
+    logger.info("adminExportUrlXlsx", { count: rows.length, cardTypeId: cardTypeId || null, batchId: batchId || null, generatedDate: generatedDate || null, unprintedOnly, markPrinted, urlOnly: !!urlOnly });
   } catch (err) {
     logger.error("adminExportUrlXlsx failed", { message: err instanceof Error ? err.message : "unknown" });
     res.status(500).json({ ok: false, code: "internal" });

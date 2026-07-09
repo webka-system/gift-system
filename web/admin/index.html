@@ -164,11 +164,14 @@
         <p class="muted small">対象のQRカードの受け取り者URL（/g/&lt;token&gt;）を1行ずつ並べた Excel を出力します。印刷工場はこのURL列を使ってQR化・印刷を行います。既定は A列=URL / B列=token / C列=種別名。</p>
         <div class="print-controls">
           <label class="field">種別<select id="print-type-select"></select></label>
+          <label class="field">ロット（生成）<select id="print-lot-select"><option value="">すべて</option></select></label>
+          <label class="field">生成日<input id="print-gen-date" type="date" /></label>
           <label class="check"><input id="print-unprinted" type="checkbox" /> 未印刷分のみ</label>
           <label class="check"><input id="print-mark" type="checkbox" /> 出力分を「印刷済み」にする</label>
           <label class="check"><input id="print-urlonly" type="checkbox" /> A列（URL）のみで出力</label>
           <button id="print-btn" type="button" class="primary-btn">Excelをダウンロード</button>
         </div>
+        <p class="muted small">ロット・生成日・種別・未印刷は組み合わせて絞り込めます（例：このロットの未印刷のみ）。生成日時が不明な既存カードはロット欄の「生成日時不明」で選べます。</p>
         <p id="print-result" class="result"></p>
       </section>
 
@@ -178,6 +181,7 @@
         <p class="muted small">住所が確定した受注（未投入）を NE へ渡します。自動投入が有効な場合はトリガーが自動で投入し、失敗分はここでリトライできます。CSV は未投入分を Shift_JIS で出力します。</p>
 
         <h3>CSV出力（手動・日次取込用）</h3>
+        <p class="muted small ne-store-note">⚠ このCSVは、NE取り込み時に<strong>「店舗2（2:九州お取り寄せ本舗(makeshop)）」の受注一括登録パターン</strong>で取り込んでください（NEでは店舗はCSVの列ではなく登録パターンで決まります）。ファイル名は <code>ne-orders-shop2.csv</code>。</p>
         <label class="inline"><input id="ne-csv-mark" type="checkbox" /> ダウンロードした分を「取込済み」にする（二重取込防止）</label>
         <div><button id="ne-csv-btn" type="button">未投入CSVをダウンロード</button></div>
 

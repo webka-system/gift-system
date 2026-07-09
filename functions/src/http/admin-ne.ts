@@ -17,7 +17,7 @@ import { isNeAutoConfigured } from "../config/env";
 import { db, giftCardsRef, giftCardTypesRef, selectableProductsRef } from "../lib/firestore";
 import { GiftCardData } from "../models";
 import { NeCsvRow, buildNeCsvBuffer } from "../ne/csv";
-import { joinAddress } from "../ne/order";
+import { joinAddress, buildSlipNo } from "../ne/order";
 import { trySubmitCard } from "../ne/submit";
 import { applyCors } from "./cors";
 import { requireAuth } from "./guard";
@@ -69,7 +69,7 @@ export const adminExportNeCsv = onRequest(HTTP_OPTIONS, async (req, res) => {
       const type = typeById.get(data.cardTypeId);
       const a = data.shippingAddress;
       return {
-        slipNo: data.token,
+        slipNo: buildSlipNo(data.token), // 店舗伝票番号（NE_SLIP_PREFIX + token / 既定は token そのまま）
         orderDate: fmtDate(data.usedAt).slice(0, 10), // 受注日は日付のみ（YYYY-MM-DD）
         name: a?.name || "",
         nameKana: a?.nameKana || "",
@@ -101,7 +101,8 @@ export const adminExportNeCsv = onRequest(HTTP_OPTIONS, async (req, res) => {
 
     const buf = buildNeCsvBuffer(rows);
     res.set("Content-Type", "text/csv; charset=Shift_JIS");
-    res.set("Content-Disposition", 'attachment; filename="ne-orders.csv"');
+    // ファイル名に「店舗2」を明記（NE取り込み時に店舗2の受注一括登録パターンで取り込む運用を示す）。
+    res.set("Content-Disposition", 'attachment; filename="ne-orders-shop2.csv"');
     res.status(200).send(buf);
     logger.info("adminExportNeCsv", { count: rows.length, marked: mark });
   } catch (err) {

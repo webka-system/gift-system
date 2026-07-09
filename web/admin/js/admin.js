@@ -155,7 +155,7 @@ async function loadTab(tab) {
   if (tab === "products") { await refreshTypes(); return renderProducts(); }
   if (tab === "generate") return refreshTypes();
   if (tab === "cards") { await refreshTypes(); return renderCards(); }
-  if (tab === "print") return refreshTypes();
+  if (tab === "print") { await refreshTypes(); return populatePrintLots(); }
   // ne タブは開いた時点で取得するデータがない（操作起点のCSV/リトライのみ）。
 }
 
@@ -301,8 +301,9 @@ function wireForms() {
     if (!$("#product-detail-overlay").hidden) closeProductDetail();
   });
 
-  // 印刷用URL一覧（Excel）。
+  // 印刷用URL一覧（Excel）。種別を変えたらロット候補も選び直す。
   $("#print-btn").addEventListener("click", onExportUrlXlsx);
+  $("#print-type-select").addEventListener("change", populatePrintLots);
 
   // NE連携。
   $("#ne-csv-btn").addEventListener("click", onExportCsv);
@@ -320,6 +321,10 @@ async function onExportUrlXlsx() {
     const params = new URLSearchParams();
     const typeId = $("#print-type-select").value;
     if (typeId) params.set("cardTypeId", typeId);
+    const lot = $("#print-lot-select").value;
+    if (lot) params.set("batchId", lot);
+    const genDate = $("#print-gen-date").value;
+    if (genDate) params.set("generatedDate", genDate);
     if ($("#print-unprinted").checked) params.set("unprintedOnly", "1");
     if ($("#print-mark").checked) params.set("markPrinted", "1");
     if ($("#print-urlonly").checked) params.set("urlOnly", "1");
@@ -686,28 +691,45 @@ async function renderCards() {
 }
 
 /**
- * ロット（生成バッチ）絞り込みの選択肢を、取得済みカードから組み立てる。
- * batchId ごとに生成日時ラベル＋枚数を表示。生成日時不明（batchId 無し）はまとめて1項目。
+ * ロット（生成バッチ）絞り込みの <option> HTML を、カード配列から組み立てる。
+ * batchId ごとに生成日時ラベル＋枚数。生成日時不明（batchId 無し）はまとめて1項目（LOT_NONE）。
+ * QR一覧フィルタと印刷タブの両方で共用する。
  */
-function populateLotFilter() {
-  const sel = $("#cards-lot-select");
-  const prev = sel.value;
+function lotOptionsHtml(cards) {
   const byBatch = new Map(); // batchId -> { generatedAt, count }
   let noneCount = 0;
-  for (const c of cardsCache) {
+  for (const c of cards) {
     if (!c.batchId) { noneCount++; continue; }
     const e = byBatch.get(c.batchId) || { generatedAt: c.generatedAt, count: 0 };
     e.count++;
     byBatch.set(c.batchId, e);
   }
-  // 生成日時の新しい順に並べる。
   const entries = [...byBatch.entries()].sort((a, b) => tsMillis(b[1].generatedAt) - tsMillis(a[1].generatedAt));
   let html = `<option value="">すべて</option>`;
   for (const [batchId, e] of entries) {
     html += `<option value="${esc(batchId)}">${esc(fmtDate(e.generatedAt) || "不明")}（${e.count}枚）</option>`;
   }
   if (noneCount) html += `<option value="${LOT_NONE}">生成日時不明（${noneCount}枚）</option>`;
-  sel.innerHTML = html;
+  return html;
+}
+
+/** QR一覧のロット絞り込みを取得済みカードから最新化する。 */
+function populateLotFilter() {
+  const sel = $("#cards-lot-select");
+  const prev = sel.value;
+  sel.innerHTML = lotOptionsHtml(cardsCache);
+  if (prev) sel.value = prev;
+}
+
+/** 印刷タブのロット絞り込みを、選択中の種別のカードから組み立てる。 */
+async function populatePrintLots() {
+  const sel = $("#print-lot-select");
+  if (!sel) return;
+  const prev = sel.value;
+  const cardTypeId = $("#print-type-select").value || undefined;
+  let cards = [];
+  try { cards = await listCards({ cardTypeId }); } catch (_) { /* 空で続行 */ }
+  sel.innerHTML = lotOptionsHtml(cards);
   if (prev) sel.value = prev;
 }
 
@@ -1240,7 +1262,7 @@ async function onExportCsv() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "ne-orders.csv";
+    a.download = "ne-orders-shop2.csv"; // 店舗2の受注一括登録パターンで取り込む運用を明示。
     document.body.appendChild(a);
     a.click();
     a.remove();

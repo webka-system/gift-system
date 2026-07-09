@@ -7,15 +7,40 @@
  *
  * 本システム側の確定事項（確定したフォーム仕様に準拠）:
  *   - NE の受注者＝発送先＝**受け取り者本人**。両ブロックを同じ受け取り者情報で埋める。
- *   - 店舗伝票番号 = token（流用）／受注日 = usedAt（確定日時）。
+ *   - 店舗伝票番号 = NE_SLIP_PREFIX + token（token は推測不可能な一意文字列＝衝突しない。下記の注参照）。
+ *   - 受注日 = usedAt（確定日時）。
  *   - 支払方法・発送方法・商品価格・数量は固定値（NE_FIXED）。商品価格=0（支払い済みギフト）。
  *   - 商品コード = selectableProducts.neProductCode／商品名 = selectableProducts.name。
  *   - 配達希望日/時間帯は任意（空欄可）。時間帯は NE 区分表記へ変換（NE_DELIVERY_TIME_MAP）。
  *   - 文字コードは CSV 側で Shift_JIS。
+ *
+ * ★店舗（店舗2）の指定について:
+ *   NE では「どの店舗の受注か」は CSV の列では持たせない。受注登録API/一括登録の際に、店舗コード（NE_STORE_CODE=
+ *   「2」仮置き）または店舗に紐づく受注一括登録パターンID（NE_UPLOAD_PATTERN_ID）を指定することで店舗が決まる。
+ *   どちらで指定するか・パラメータ名は使用する NE API 仕様に依存するため、両方の枠を用意し実接続時に確定する。
+ *   - API送信時: NE_FIELD.storeCode / NE_FIELD.uploadPatternId（要NE確認）で渡す。
+ *   - CSV: 列は持たせない。NE 取り込み時に「店舗2の受注一括登録パターン」を選ぶ運用。
+ *
+ * ★店舗伝票番号（token）の一意性について:
+ *   token は base64url の推測不可能な一意文字列（TOKEN.BYTES 由来）。店舗2 の他の受注（MakeShop実受注は
+ *   通常は連番等の数値ID）とは形式も値域も異なり、衝突しない。origin を明示したい場合は NE_SLIP_PREFIX に
+ *   接頭辞（例 "GC-"）を設定できる（既定は空＝token そのまま。NE 側の桁数制限に注意）。
  */
 
 import { ShippingAddress } from "../models";
 import { NE_FIXED, DELIVERY } from "../config/constants";
+import { NE_STORE_CODE, NE_UPLOAD_PATTERN_ID } from "../config/env";
+
+/**
+ * 店舗伝票番号の接頭辞（既定は空＝token そのまま）。
+ * gift-system 由来と分かるよう印を付けたい場合に設定する（例 "GC-"）。NE の桁数制限に注意。
+ */
+export const NE_SLIP_PREFIX = "";
+
+/** 店舗伝票番号を組み立てる（NE_SLIP_PREFIX + token）。 */
+export function buildSlipNo(token: string): string {
+  return `${NE_SLIP_PREFIX}${token}`;
+}
 
 /** NE 受注登録に渡す本システム側の入力（確定データ）。受注者＝発送先＝受け取り者。 */
 export interface NeOrderInput {
@@ -63,6 +88,10 @@ export function joinAddress(a: ShippingAddress): string {
  * ★ 右辺（NE側フィールド名）は暫定。NE API 仕様書で確定したら**ここだけ**直す。
  */
 export const NE_FIELD = {
+  // 取り込み先店舗の指定（＝店舗2）。CSVには持たせず、API送信時にこれで店舗が決まる。
+  // 店舗コード指定か／受注一括登録パターンID指定かは NE API 仕様に依存。実接続時に不要な方を外す。
+  storeCode: "shop_id",                                // TODO(NE): 店舗コード（店舗ID）。正確なパラメータ名は要確認。
+  uploadPatternId: "receive_order_upload_pattern_id",  // TODO(NE): 受注一括登録パターンID。正確なパラメータ名は要確認。
   // 受注ヘッダ
   slipNo: "receiveorder_id_shop",                      // TODO(NE): 店舗伝票番号
   orderDate: "receiveorder_date",                      // TODO(NE): 受注日
@@ -100,7 +129,11 @@ export function buildOrderParams(input: NeOrderInput): Record<string, string | n
   const a = input.address;
   const addr = joinAddress(a);
   return {
-    [NE_FIELD.slipNo]: input.token,
+    // 店舗2として登録するための店舗指定（API送信時に付与）。店舗コード or パターンIDのどちらを NE が使うかは
+    // 実接続時に確定（不要な方は外す）。実接続前は storeCode="2"（仮）・uploadPatternId=""（未設定）。
+    [NE_FIELD.storeCode]: NE_STORE_CODE,
+    [NE_FIELD.uploadPatternId]: NE_UPLOAD_PATTERN_ID,
+    [NE_FIELD.slipNo]: buildSlipNo(input.token),
     [NE_FIELD.orderDate]: input.orderDate,
     // 受注者ブロック（受け取り者）
     [NE_FIELD.ordererName]: a.name,

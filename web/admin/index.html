@@ -72,18 +72,25 @@
           <select id="product-type-select"></select>
         </label>
         <table class="data-table">
-          <thead><tr><th>画像</th><th>商品名 / 説明</th><th>NE商品コード</th><th>状態</th><th></th></tr></thead>
+          <thead><tr><th>画像</th><th>商品名</th><th>状態</th><th></th></tr></thead>
           <tbody id="products-tbody"></tbody>
         </table>
 
         <h3 id="product-form-title">商品の登録</h3>
-        <p class="muted small">選択中の種別に紐づけて登録します（同一商品が複数種別にまたがることはありません）。編集時、画像は選び直したときだけ差し替わります。</p>
+        <p class="muted small">選択中の種別に紐づけて登録します（同一商品が複数種別にまたがることはありません）。編集時、メイン画像は選び直したときだけ差し替わります。</p>
         <form id="product-form" class="form-grid">
           <input id="product-id" type="hidden" />
           <label>商品名<input id="product-name" type="text" required /></label>
           <label>NE商品コード<input id="product-ne-code" type="text" required /></label>
           <label class="wide">商品説明<textarea id="product-desc" rows="2"></textarea></label>
-          <label>商品画像<input id="product-image" type="file" accept="image/*" /></label>
+          <label class="wide">セット内容（任意・1行＝1項目の箇条書き）
+            <textarea id="product-set" rows="4" placeholder="唐揚げ200g&#10;ハンバーグ5個&#10;（1行につき1項目を入力してください）"></textarea>
+          </label>
+          <label>メイン画像（サムネ）<input id="product-image" type="file" accept="image/*" /></label>
+          <label>追加画像（任意・最大4枚）<input id="product-add-image-input" type="file" accept="image/*" multiple /></label>
+          <div class="wide">
+            <div id="product-add-images" class="add-images"></div>
+          </div>
           <button id="product-submit" type="submit">商品を登録</button>
           <button id="product-cancel" type="button" class="ghost" hidden>編集をやめる</button>
         </form>
@@ -178,6 +185,17 @@
           <button id="detail-close" class="ghost" type="button" aria-label="閉じる">×</button>
         </header>
         <div id="detail-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <!-- ===== 商品詳細ビュー（モーダル / 複数画像・セット内容・説明） ===== -->
+    <div id="product-detail-overlay" class="modal-overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="product-detail-title">
+        <header class="modal-header">
+          <h2 id="product-detail-title">商品詳細</h2>
+          <button id="product-detail-close" class="ghost" type="button" aria-label="閉じる">×</button>
+        </header>
+        <div id="product-detail-body" class="modal-body"></div>
       </div>
     </div>
   </section>

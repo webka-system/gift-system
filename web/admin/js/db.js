@@ -83,12 +83,17 @@ export async function listProductsByType(cardTypeId) {
 }
 
 /** 商品を新規作成（cardTypeId で親種別に紐づける）。 */
-export async function createProduct({ cardTypeId, name, description, imageUrl, neProductCode, active = true }) {
+export async function createProduct({
+  cardTypeId, name, description, imageUrl, neProductCode,
+  additionalImages = [], setContents = "", active = true,
+}) {
   const ref = await addDoc(collection(db, COLLECTIONS.SELECTABLE_PRODUCTS), {
     cardTypeId,
     name,
     description,
     imageUrl,
+    additionalImages,
+    setContents,
     neProductCode,
     active,
   });

@@ -21,7 +21,7 @@ import {
 import { uploadProductImage } from "./storage.js";
 import { neStatusInfo, statusBadgeHtml } from "./status.js";
 import { shortToken, filterCards } from "./cards-filter.js";
-import { TOKEN } from "/shared/constants.js";
+import { TOKEN, PRODUCT } from "/shared/constants.js";
 
 // ===== 小さなユーティリティ =====
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -251,8 +251,18 @@ function wireForms() {
   // 商品フォーム。
   $("#product-form").addEventListener("submit", onProductSubmit);
   $("#product-cancel").addEventListener("click", resetProductForm);
+  // 追加画像（選択・削除プレビュー）。
+  $("#product-add-image-input").addEventListener("change", onAddImagesPicked);
+  $("#product-add-images").addEventListener("click", onAddImageDelete);
   // 種別を切り替えたら編集モードは解除（別種別の商品を編集中のまま登録しないように）。
   $("#product-type-select").addEventListener("change", () => { resetProductForm(); renderProducts(); });
+
+  // 商品詳細モーダル（複数画像ギャラリー・セット内容・説明）。
+  $("#product-detail-body").addEventListener("click", onProductDetailClick);
+  $("#product-detail-close").addEventListener("click", closeProductDetail);
+  $("#product-detail-overlay").addEventListener("click", (e) => {
+    if (e.target === $("#product-detail-overlay")) closeProductDetail();
+  });
 
   // QR生成フォーム。
   $("#generate-form").addEventListener("submit", onGenerateSubmit);
@@ -272,7 +282,9 @@ function wireForms() {
     if (e.target === $("#detail-overlay")) closeCardDetail();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !$("#detail-overlay").hidden) closeCardDetail();
+    if (e.key !== "Escape") return;
+    if (!$("#detail-overlay").hidden) closeCardDetail();
+    if (!$("#product-detail-overlay").hidden) closeProductDetail();
   });
 
   // 印刷用URL一覧（Excel）。
@@ -337,25 +349,27 @@ async function renderProducts() {
   const cardTypeId = $("#product-type-select").value;
   const tbody = $("#products-tbody");
   if (!cardTypeId) {
-    tableEmpty(tbody, 5, "種別を選択してください。");
+    tableEmpty(tbody, 4, "種別を選択してください。");
     return;
   }
-  tableLoading(tbody, 5);
+  tableLoading(tbody, 4);
   const products = await listProductsByType(cardTypeId);
   productsCache = products;
   tbody.innerHTML = "";
   if (products.length === 0) {
-    tableEmpty(tbody, 5, "この種別にはまだ商品がありません。");
+    tableEmpty(tbody, 4, "この種別にはまだ商品がありません。");
     return;
   }
+  // 一覧は簡潔に（サムネ＋名前＋状態）。複数画像・セット内容・説明は「詳細」ビューで見せる。
   for (const p of products) {
+    const extra = (p.additionalImages?.length || 0);
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${p.imageUrl ? `<img class="thumb" src="${esc(p.imageUrl)}" alt="">` : ""}</td>
-      <td>${esc(p.name)}<div class="muted small">${esc(p.description)}</div></td>
-      <td>${esc(p.neProductCode)}</td>
+      <td>${esc(p.name)}${extra ? `<div class="muted small">＋画像${extra}枚</div>` : ""}</td>
       <td>${p.active ? "有効" : "<span class='muted'>無効</span>"}</td>
       <td class="row-actions">
+        <button data-act="product-detail" data-id="${p.id}">詳細</button>
         <button data-act="edit" data-id="${p.id}">編集</button>
         <button data-act="toggle" data-id="${p.id}" data-active="${p.active}">${p.active ? "無効化" : "有効化"}</button>
         <button data-act="delete" data-id="${p.id}">削除</button>
@@ -367,10 +381,40 @@ async function renderProducts() {
 // 商品編集用に、現在描画中の商品をキャッシュ（フォームへ値を載せるため）。
 let productsCache = [];
 
+// 追加画像フォームの状態。要素は既存URL or 新規ファイル:
+//   { kind:"url", url } … 既存の追加画像（編集時に読み込む）
+//   { kind:"file", file, preview } … これから登録する新規ファイル（preview は ObjectURL）
+let productAddImages = [];
+
+/** 追加画像フォームのプレビュー（サムネ＋削除ボタン）を状態から描画する。 */
+function renderAddImages() {
+  const wrap = $("#product-add-images");
+  wrap.innerHTML = productAddImages.map((it, i) => {
+    const src = it.kind === "url" ? it.url : it.preview;
+    return `<div class="add-image">
+      <img src="${esc(src)}" alt="">
+      <button type="button" class="add-image-del" data-index="${i}" title="削除">×</button>
+    </div>`;
+  }).join("");
+  const remain = PRODUCT.MAX_ADDITIONAL_IMAGES - productAddImages.length;
+  $("#product-add-image-input").disabled = remain <= 0;
+  $("#product-add-image-input").title = remain <= 0 ? "追加画像は最大" + PRODUCT.MAX_ADDITIONAL_IMAGES + "枚までです" : "";
+}
+
+/** 追加画像フォームの状態を空に戻す（ObjectURL を解放してから）。 */
+function clearAddImages() {
+  for (const it of productAddImages) {
+    if (it.kind === "file" && it.preview) URL.revokeObjectURL(it.preview);
+  }
+  productAddImages = [];
+  renderAddImages();
+}
+
 /** 商品フォームを新規モードに戻す。 */
 function resetProductForm() {
   $("#product-form").reset();
   $("#product-id").value = "";
+  clearAddImages();
   $("#product-form-title").textContent = "商品の登録";
   $("#product-submit").textContent = "商品を登録";
   $("#product-cancel").hidden = true;
@@ -380,15 +424,25 @@ $("#products-tbody").addEventListener("click", async (e) => {
   const btn = e.target.closest("button");
   if (!btn) return;
   const id = btn.dataset.id;
+  if (btn.dataset.act === "product-detail") {
+    openProductDetail(id);
+    return;
+  }
   if (btn.dataset.act === "edit") {
-    // フォームに値を載せて更新モードにする（画像は選び直したときだけ差し替え）。
+    // フォームに値を載せて更新モードにする（メイン画像は選び直したときだけ差し替え）。
     const p = productsCache.find((x) => x.id === id);
     if (!p) return;
     $("#product-id").value = p.id;
     $("#product-name").value = p.name || "";
     $("#product-ne-code").value = p.neProductCode || "";
     $("#product-desc").value = p.description || "";
+    $("#product-set").value = p.setContents || "";
     $("#product-image").value = "";
+    $("#product-add-image-input").value = "";
+    // 既存の追加画像を編集状態に読み込む（削除・追加ができる）。
+    clearAddImages();
+    productAddImages = (p.additionalImages || []).map((url) => ({ kind: "url", url }));
+    renderAddImages();
     $("#product-form-title").textContent = "商品の編集";
     $("#product-submit").textContent = "商品を更新";
     $("#product-cancel").hidden = false;
@@ -426,12 +480,26 @@ async function onProductSubmit(e) {
   try {
     const file = $("#product-image").files[0];
     const description = $("#product-desc").value.trim();
+    // セット内容: 1行=1項目。前後空白を落とし、空行を除いて改行区切りで保存。
+    const setContents = $("#product-set").value
+      .split(/\r?\n/).map((s) => s.trim()).filter(Boolean).join("\n");
+
+    // 追加画像: 既存URLはそのまま、新規ファイルはアップロードしてURL化（順序維持）。
+    const additionalImages = [];
+    for (const it of productAddImages) {
+      if (it.kind === "url") {
+        additionalImages.push(it.url);
+      } else {
+        flash("追加画像をアップロード中…");
+        additionalImages.push(await uploadProductImage(cardTypeId, it.file));
+      }
+    }
 
     if (editingId) {
-      // 更新: 画像は選び直したときだけ差し替える。
-      const patch = { name, description, neProductCode };
+      // 更新: メイン画像は選び直したときだけ差し替え。追加画像・セット内容は管理状態で常に上書き。
+      const patch = { name, description, neProductCode, additionalImages, setContents };
       if (file) {
-        flash("画像をアップロード中…");
+        flash("メイン画像をアップロード中…");
         patch.imageUrl = await uploadProductImage(cardTypeId, file);
       }
       await updateProduct(editingId, patch);
@@ -439,10 +507,10 @@ async function onProductSubmit(e) {
     } else {
       let imageUrl = "";
       if (file) {
-        flash("画像をアップロード中…");
+        flash("メイン画像をアップロード中…");
         imageUrl = await uploadProductImage(cardTypeId, file);
       }
-      await createProduct({ cardTypeId, name, description, imageUrl, neProductCode });
+      await createProduct({ cardTypeId, name, description, imageUrl, neProductCode, additionalImages, setContents });
       flash("商品を登録しました。");
     }
     resetProductForm();
@@ -454,6 +522,92 @@ async function onProductSubmit(e) {
     // 成功時は resetProductForm がラベルを戻しているので、失敗で残った「保存中…」だけ復元する。
     if (submitBtn.textContent === "保存中…") submitBtn.textContent = submitLabel;
   }
+}
+
+/** 追加画像ファイルが選択されたとき、上限まで状態に積んでプレビュー更新。 */
+function onAddImagesPicked(e) {
+  const files = [...e.target.files];
+  for (const file of files) {
+    if (productAddImages.length >= PRODUCT.MAX_ADDITIONAL_IMAGES) {
+      flash(`追加画像は最大${PRODUCT.MAX_ADDITIONAL_IMAGES}枚までです。`, "error");
+      break;
+    }
+    productAddImages.push({ kind: "file", file, preview: URL.createObjectURL(file) });
+  }
+  e.target.value = ""; // 同じファイルを選び直せるように毎回クリア。
+  renderAddImages();
+}
+
+/** 追加画像プレビューの×で当該画像を状態から取り除く。 */
+function onAddImageDelete(e) {
+  const btn = e.target.closest(".add-image-del");
+  if (!btn) return;
+  const i = Number(btn.dataset.index);
+  const it = productAddImages[i];
+  if (it?.kind === "file" && it.preview) URL.revokeObjectURL(it.preview);
+  productAddImages.splice(i, 1);
+  renderAddImages();
+}
+
+// ============================================================
+// 商品詳細ビュー（複数画像ギャラリー・セット内容・説明）
+// ============================================================
+/** セット内容（改行区切り）を「・」付きリストHTMLに。空なら空文字。 */
+function setContentsListHtml(text) {
+  const items = String(text || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  if (!items.length) return "";
+  return `<ul class="set-list">${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`;
+}
+
+/** 画像配列（先頭=メイン）から、メイン大画像＋サムネ切替のギャラリーHTMLを組む。 */
+function galleryHtml(images) {
+  const imgs = images.filter(Boolean);
+  if (!imgs.length) return `<div class="gallery-empty muted">画像はありません。</div>`;
+  const thumbs = imgs.length > 1
+    ? `<div class="gallery-thumbs">${imgs.map((u, i) =>
+        `<img class="gallery-thumb${i === 0 ? " active" : ""}" data-src="${esc(u)}" src="${esc(u)}" alt="">`).join("")}</div>`
+    : "";
+  return `<div class="gallery">
+      <img class="gallery-main" src="${esc(imgs[0])}" alt="">
+      ${thumbs}
+    </div>`;
+}
+
+/** 商品詳細モーダルを開く（複数画像・セット内容・説明・NEコード・状態）。 */
+function openProductDetail(id) {
+  const p = productsCache.find((x) => x.id === id);
+  if (!p) return;
+  const images = [p.imageUrl, ...(p.additionalImages || [])];
+  const setHtml = setContentsListHtml(p.setContents);
+  $("#product-detail-body").innerHTML = `
+    <section class="detail-section">${galleryHtml(images)}</section>
+    <section class="detail-section">
+      <h3>${esc(p.name)}</h3>
+      ${p.description ? `<p>${esc(p.description)}</p>` : `<p class="muted">説明はありません。</p>`}
+    </section>
+    <section class="detail-section">
+      <h3>セット内容</h3>
+      ${setHtml || `<p class="muted">未設定</p>`}
+    </section>
+    <section class="detail-section">
+      ${addrRow("NE商品コード", p.neProductCode)}
+      ${addrRow("状態", p.active ? "有効" : "無効")}
+    </section>`;
+  $("#product-detail-overlay").hidden = false;
+}
+
+/** 商品詳細モーダルを閉じる。 */
+function closeProductDetail() {
+  $("#product-detail-overlay").hidden = true;
+}
+
+/** 商品詳細モーダル内クリック（サムネで大画像を切り替え）。 */
+function onProductDetailClick(e) {
+  const thumb = e.target.closest(".gallery-thumb");
+  if (!thumb) return;
+  const main = $(".gallery-main", $("#product-detail-body"));
+  if (main) main.src = thumb.dataset.src;
+  for (const t of $$(".gallery-thumb", $("#product-detail-body"))) t.classList.toggle("active", t === thumb);
 }
 
 // ============================================================

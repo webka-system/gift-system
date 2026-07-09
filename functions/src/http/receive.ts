@@ -114,7 +114,8 @@ function validateDeliveryTime(raw: unknown): string {
 
 /**
  * GET /api/receiveGetCard?token=...
- *   res(200): { ok:true, status:"unused", cardType:{id,name,price}, products:[{id,name,description,imageUrl}] }
+ *   res(200): { ok:true, status:"unused", cardType:{id,name,price},
+ *              products:[{id,name,description,imageUrl,additionalImages:[],setContents}] }
  *       あるいは { ok:true, status:"used" }（使用済み＝二重利用防止表示用。商品情報は返さない）
  *   res(404): { ok:false, code:"not_found" }（無効トークン）
  */
@@ -145,7 +146,15 @@ export const receiveGetCard = onRequest(HTTP_OPTIONS, async (req, res) => {
     const type = typeSnap.data();
     const products = prodSnap.docs.map((d) => {
       const p = d.data();
-      return { id: d.id, name: p.name, description: p.description, imageUrl: p.imageUrl };
+      // 追加画像・セット内容は後付けフィールド。無い既存商品でも壊れないよう既定値で返す。
+      return {
+        id: d.id,
+        name: p.name,
+        description: p.description,
+        imageUrl: p.imageUrl,
+        additionalImages: Array.isArray(p.additionalImages) ? p.additionalImages : [],
+        setContents: typeof p.setContents === "string" ? p.setContents : "",
+      };
     });
 
     res.status(200).json({

@@ -66,6 +66,53 @@ h2 { font-size: 1.05rem; margin: 1.75rem 0 .75rem; }
 .product-media img { width: 100%; height: 100%; object-fit: cover; }
 .product-name { font-weight: 600; }
 .product-desc { color: var(--muted); font-size: .9rem; }
+/* 「詳細を見る」: カード内の小さなリンク風ボタン（クリックしても選択はしない）。 */
+.detail-link {
+  margin-top: .4rem;
+  background: none; border: none; padding: 0;
+  color: var(--accent); font: inherit; font-size: .88rem;
+  text-decoration: underline; cursor: pointer;
+}
+
+/* ===== 商品詳細モーダル（画像ギャラリー・セット内容・説明） ===== */
+.product-modal {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(0,0,0,.5);
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 0;
+}
+.product-modal-card {
+  position: relative;
+  background: var(--bg); width: 100%; max-width: 560px;
+  max-height: 92vh; overflow-y: auto;
+  border-radius: 16px 16px 0 0; padding: 1rem 1.25rem 1.5rem;
+}
+.pm-close {
+  position: absolute; top: .5rem; right: .6rem; z-index: 2;
+  width: 34px; height: 34px; padding: 0; line-height: 1;
+  border-radius: 50%; border: 1px solid var(--border);
+  background: #fff; color: var(--fg); font-size: 1.25rem; cursor: pointer;
+}
+.pm-gallery { margin: .5rem 0 1rem; }
+.pm-stage { position: relative; background: #f1f1f4; border-radius: 12px; overflow: hidden; }
+.pm-img { display: block; width: 100%; max-height: 60vh; object-fit: contain; }
+.pm-noimg { padding: 3rem 1rem; text-align: center; color: var(--muted); background: #f1f1f4; border-radius: 12px; }
+.pm-arrow {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 40px; height: 40px; border-radius: 50%;
+  border: none; background: rgba(0,0,0,.45); color: #fff; font-size: 1.5rem; line-height: 1; cursor: pointer;
+}
+.pm-prev { left: .5rem; }
+.pm-next { right: .5rem; }
+.pm-dots { display: flex; justify-content: center; gap: .35rem; margin-top: .6rem; }
+.pm-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+.pm-dot.active { background: var(--accent); }
+.pm-name { font-size: 1.2rem; margin: 0 0 .5rem; }
+.pm-set h3 { font-size: 1rem; margin: .5rem 0 .3rem; }
+.pm-set ul { margin: 0; padding-left: 1.2rem; }
+.pm-set li { margin: .15rem 0; }
+.pm-desc { color: var(--muted); white-space: pre-wrap; margin: .75rem 0 0; }
+.product-modal .primary { margin-top: 1.25rem; }
 
 /* 住所フォーム */
 .address-form { display: flex; flex-direction: column; gap: .75rem; }

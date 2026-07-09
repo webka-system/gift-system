@@ -91,6 +91,20 @@
       </div>
     </section>
 
+    <!-- 商品詳細ビュー（モーダル / 画像ギャラリー・セット内容・説明） -->
+    <div id="product-modal" class="product-modal" hidden>
+      <div class="product-modal-card" role="dialog" aria-modal="true" aria-labelledby="pm-name">
+        <button id="pm-close" class="pm-close" type="button" aria-label="閉じる">×</button>
+        <div id="pm-gallery" class="pm-gallery"></div>
+        <div class="pm-body">
+          <h2 id="pm-name" class="pm-name"></h2>
+          <div id="pm-set" class="pm-set"></div>
+          <p id="pm-desc" class="pm-desc"></p>
+        </div>
+        <button id="pm-select" type="button" class="primary">この商品を選ぶ</button>
+      </div>
+    </div>
+
   </main>
 
   <script type="module" src="/receive/js/receive.js"></script>

@@ -122,9 +122,10 @@ function tokenFromUrl() {
 const token = tokenFromUrl();
 let selectedProductId = null;
 
-// フォームの補助UI（都道府県プルダウン・配達希望）を先に組み立てる。
+// フォームの補助UI（都道府県プルダウン・配達希望）と商品詳細モーダルを先に組み立てる。
 setupPrefectures();
 setupDeliveryControls();
+setupProductModal();
 
 // 郵便番号が7桁そろったら住所を自動入力（入力途中・確定どちらでも拾う）。
 const zipInput = $('input[name="postalCode"]');
@@ -153,11 +154,16 @@ async function init() {
   }
 }
 
+// 商品データを id で引けるように保持（詳細ビュー用）。
+let productsById = {};
+
 function renderSelection(data) {
   if (data.cardType?.name) $("#card-type-name").textContent = data.cardType.name;
 
   const list = $("#product-list");
   const products = Array.isArray(data.products) ? data.products : [];
+  productsById = {};
+  for (const p of products) productsById[p.id] = p;
   if (products.length === 0) {
     list.innerHTML = `<p class="muted">現在お選びいただける商品がありません。お手数ですがお問い合わせください。</p>`;
     return;
@@ -169,16 +175,132 @@ function renderSelection(data) {
       <div class="product-info">
         <div class="product-name">${esc(p.name)}</div>
         <div class="product-desc">${esc(p.description)}</div>
+        <button type="button" class="detail-link" data-id="${esc(p.id)}">詳細を見る</button>
       </div>
     </label>
   `).join("");
 
+  // 選択（ラジオ）: 既存挙動を維持。カードのハイライトを更新。
   list.addEventListener("change", (e) => {
     if (e.target.name !== "product") return;
     selectedProductId = e.target.value;
     for (const card of list.querySelectorAll(".product-card")) {
       card.classList.toggle("selected", card.contains(e.target) && e.target.checked);
     }
+  });
+
+  // 「詳細を見る」: 商品詳細モーダルを開く（ラジオは選択しない）。
+  list.addEventListener("click", (e) => {
+    const btn = e.target.closest(".detail-link");
+    if (!btn) return;
+    e.preventDefault();   // ラベル経由でラジオが選択されないように。
+    e.stopPropagation();
+    openProductModal(btn.dataset.id);
+  });
+}
+
+// ============================================================
+// 商品詳細モーダル（画像ギャラリー・セット内容・説明。選ぶときの材料）
+// ============================================================
+let pmProductId = null;
+let pmImages = [];
+let pmIndex = 0;
+
+/** セット内容（改行区切り）を「・」付きリストで。空なら空文字。 */
+function setContentsHtml(text) {
+  const items = String(text || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  if (!items.length) return "";
+  return `<h3>セット内容</h3><ul>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`;
+}
+
+/** 現在の pmIndex の画像＋矢印＋ドットを描画する。 */
+function renderPmGallery() {
+  const g = $("#pm-gallery");
+  if (!pmImages.length) { g.innerHTML = `<div class="pm-noimg">画像はありません</div>`; return; }
+  const many = pmImages.length > 1;
+  const arrows = many
+    ? `<button type="button" class="pm-arrow pm-prev" aria-label="前の画像">‹</button>
+       <button type="button" class="pm-arrow pm-next" aria-label="次の画像">›</button>` : "";
+  const dots = many
+    ? `<div class="pm-dots">${pmImages.map((_u, i) => `<span class="pm-dot${i === pmIndex ? " active" : ""}"></span>`).join("")}</div>` : "";
+  g.innerHTML = `
+    <div class="pm-stage">
+      <img class="pm-img" src="${esc(pmImages[pmIndex])}" alt="" />
+      ${arrows}
+    </div>
+    ${dots}`;
+}
+
+/** i 番目の画像へ（範囲を巡回）。 */
+function pmShow(i) {
+  const n = pmImages.length;
+  if (!n) return;
+  pmIndex = (i + n) % n;
+  renderPmGallery();
+}
+
+/** 商品詳細モーダルを開く。 */
+function openProductModal(id) {
+  const p = productsById[id];
+  if (!p) return;
+  pmProductId = id;
+  pmImages = [p.imageUrl, ...(Array.isArray(p.additionalImages) ? p.additionalImages : [])].filter(Boolean);
+  pmIndex = 0;
+  $("#pm-name").textContent = p.name || "";
+  $("#pm-set").innerHTML = setContentsHtml(p.setContents);
+  $("#pm-desc").textContent = p.description || "";
+  renderPmGallery();
+  $("#product-modal").hidden = false;
+}
+
+/** 商品詳細モーダルを閉じる。 */
+function closeProductModal() {
+  $("#product-modal").hidden = true;
+  pmProductId = null;
+}
+
+/** 詳細モーダルの「この商品を選ぶ」: 対応するラジオを選択して閉じる（既存の選択挙動を流用）。 */
+function selectFromModal() {
+  const radios = [...document.querySelectorAll('input[name="product"]')];
+  const radio = radios.find((r) => r.value === pmProductId);
+  if (radio) {
+    radio.checked = true;
+    radio.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  closeProductModal();
+}
+
+/** 商品詳細モーダルのイベントを一度だけ配線する（画像切替・スワイプ・選択・閉じる）。 */
+function setupProductModal() {
+  const modal = $("#product-modal");
+  const gallery = $("#pm-gallery");
+  if (!modal || !gallery) return;
+
+  // 矢印・ドットでの切替。
+  gallery.addEventListener("click", (e) => {
+    if (e.target.closest(".pm-next")) pmShow(pmIndex + 1);
+    else if (e.target.closest(".pm-prev")) pmShow(pmIndex - 1);
+    else if (e.target.classList.contains("pm-dot")) {
+      const dots = [...gallery.querySelectorAll(".pm-dot")];
+      pmShow(dots.indexOf(e.target));
+    }
+  });
+
+  // スワイプ（左右）での切替。
+  let startX = null;
+  gallery.addEventListener("touchstart", (e) => { startX = e.touches[0]?.clientX ?? null; }, { passive: true });
+  gallery.addEventListener("touchend", (e) => {
+    if (startX == null) return;
+    const dx = (e.changedTouches[0]?.clientX ?? startX) - startX;
+    if (Math.abs(dx) > 40) pmShow(pmIndex + (dx < 0 ? 1 : -1));
+    startX = null;
+  }, { passive: true });
+
+  $("#pm-select").addEventListener("click", selectFromModal);
+  $("#pm-close").addEventListener("click", closeProductModal);
+  modal.addEventListener("click", (e) => { if (e.target === modal) closeProductModal(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !modal.hidden) closeProductModal();
   });
 }
 

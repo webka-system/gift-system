@@ -91,6 +91,12 @@ export const NE_FIXED = {
   QUANTITY: 1,
 };
 
+// ===== 選定可能商品の詳細表示（追加画像・セット内容 / design.md 3.2 拡張）=====
+export const PRODUCT = {
+  // メイン画像（imageUrl）に加えて登録できる追加画像の最大枚数（メイン＋4＝合計5枚）。
+  MAX_ADDITIONAL_IMAGES: 4,
+};
+
 // ===== 都道府県（受け取り者フォームのプルダウン / 郵便番号自動入力の値と一致）=====
 // zipcloud 等の郵便番号APIが返す address1（都道府県）とそのまま一致する表記・順序。
 export const PREFECTURES = [

@@ -43,8 +43,12 @@ export interface SelectableProductData {
   name: string;
   /** 簡単な商品説明。 */
   description: string;
-  /** 商品画像URL（Firebase Storage）。 */
+  /** 商品画像URL（Firebase Storage）。メイン画像／サムネ。 */
   imageUrl: string;
+  /** 追加画像URL（任意 / 最大 PRODUCT.MAX_ADDITIONAL_IMAGES 枚。メインと合わせて詳細ギャラリーで表示）。 */
+  additionalImages?: string[];
+  /** セット内容（任意 / 改行区切りテキスト。1行=1項目。表示時は「・」付きリスト。説明文とは独立）。 */
+  setContents?: string;
   /** 選定されたとき NE へ流す実商品コード。 */
   neProductCode: string;
   /** 有効/無効。 */

@@ -29,6 +29,7 @@
   "compileOnSave": true,
   "include": [
     "src/**/*",
-    "../shared/constants.js"
+    "../shared/constants.js",
+    "../shared/expiry.js"
   ]
 }

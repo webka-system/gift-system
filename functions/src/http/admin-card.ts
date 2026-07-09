@@ -161,3 +161,43 @@ export const adminResetGiftCard = onRequest(HTTP_OPTIONS, async (req, res) => {
   logger.info("adminResetGiftCard", { cardId, historyCount, by: admin.email ?? "" });
   res.status(200).json({ ok: true, historyCount });
 });
+
+/**
+ * POST /api/adminSetCardExpiry
+ *   body: { cardId, expiryDaysOverride }
+ *     expiryDaysOverride: 正の整数 = 個別上書き（種別デフォルトより優先） / 空・null・0以下 = 上書き解除。
+ *   個別カードの有効期限日数を上書きする。**期限切れカードの延長（救済）**にも使う（status 不問）。
+ *   期限は generatedAt を起点に算出されるため、延ばした日数で再び期限内になれば受け取り者が再び使える。
+ *   res(200): { ok:true } / 400 invalid_argument / 404 not_found
+ */
+export const adminSetCardExpiry = onRequest(HTTP_OPTIONS, async (req, res) => {
+  applyCors(req.headers, res, "POST, OPTIONS");
+  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+  if (req.method !== "POST") { res.status(405).json({ ok: false, code: "method_not_allowed" }); return; }
+
+  const admin = await requireAuth(req, res);
+  if (!admin) return;
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const cardId = typeof body.cardId === "string" ? body.cardId.trim() : "";
+  if (!cardId) { res.status(400).json({ ok: false, code: "invalid_argument" }); return; }
+
+  // 上書き値の解釈: 正の整数のみ設定、空/null/0以下は「上書き解除」。
+  const raw = body.expiryDaysOverride;
+  const n = typeof raw === "number" ? raw
+    : (typeof raw === "string" && raw.trim() !== "" ? Number(raw) : NaN);
+  const setVal: number | null = Number.isInteger(n) && n > 0 ? n : null;
+
+  try {
+    const ref = giftCardsRef.doc(cardId);
+    const snap = await ref.get();
+    if (!snap.exists) { res.status(404).json({ ok: false, code: "not_found" }); return; }
+    await ref.update({ expiryDaysOverride: setVal === null ? FieldValue.delete() : setVal });
+  } catch (err) {
+    logger.error("adminSetCardExpiry failed", { message: err instanceof Error ? err.message : "unknown" });
+    res.status(500).json({ ok: false, code: "internal" });
+    return;
+  }
+  logger.info("adminSetCardExpiry", { cardId, expiryDaysOverride: setVal, by: admin.email ?? "" });
+  res.status(200).json({ ok: true, expiryDaysOverride: setVal });
+});

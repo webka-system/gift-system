@@ -24,6 +24,7 @@ import {
   where,
   orderBy,
   serverTimestamp,
+  deleteField,
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { firebaseApp } from "./auth.js";
 import { COLLECTIONS, CARD_STATUS } from "/shared/constants.js";
@@ -48,15 +49,11 @@ export async function listCardTypes() {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-/** 種別を新規作成。 */
-export async function createCardType({ name, price, cardProductCode, active = true }) {
-  const ref = await addDoc(collection(db, COLLECTIONS.GIFT_CARD_TYPES), {
-    name,
-    price,
-    cardProductCode,
-    active,
-    createdAt: serverTimestamp(),
-  });
+/** 種別を新規作成。expiryDays は正の整数のときだけ保存（未設定＝無期限）。 */
+export async function createCardType({ name, price, cardProductCode, expiryDays, active = true }) {
+  const data = { name, price, cardProductCode, active, createdAt: serverTimestamp() };
+  if (Number.isInteger(expiryDays) && expiryDays > 0) data.expiryDays = expiryDays;
+  const ref = await addDoc(collection(db, COLLECTIONS.GIFT_CARD_TYPES), data);
   return ref.id;
 }
 
@@ -64,6 +61,9 @@ export async function createCardType({ name, price, cardProductCode, active = tr
 export function updateCardType(id, patch) {
   return updateDoc(doc(db, COLLECTIONS.GIFT_CARD_TYPES, id), patch);
 }
+
+/** 種別更新用: expiryDays を削除するためのフィールドセンチネル（無期限に戻す時に使う）。 */
+export { deleteField };
 
 /** 種別の有効/無効を切り替え。 */
 export function setCardTypeActive(id, active) {

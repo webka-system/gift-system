@@ -8,7 +8,7 @@
  * 使用済みトークンは「使用済み」表示（二重利用防止）。
  */
 
-import { DELIVERY, PREFECTURES } from "/shared/constants.js";
+import { DELIVERY, PREFECTURES, EXPIRY_CONTACT } from "/shared/constants.js";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -107,6 +107,21 @@ function show(id) {
   for (const v of document.querySelectorAll(".view")) v.hidden = v.id !== id;
 }
 
+/** 期限切れ画面の文言・問い合わせ先を定数から描画（プレースホルダは後で差し替え可能）。 */
+function renderExpiredView() {
+  const c = EXPIRY_CONTACT || {};
+  $("#expired-heading").textContent = c.heading || "受け取り期限が過ぎています";
+  $("#expired-body").textContent = c.body || "";
+  const lines = [];
+  if (c.note) lines.push(`<p>${esc(c.note)}</p>`);
+  const contact = [];
+  if (c.name) contact.push(esc(c.name));
+  if (c.email) contact.push(`メール: <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`);
+  if (c.phone) contact.push(`電話: ${esc(c.phone)}`);
+  if (contact.length) lines.push(`<p class="muted small">${contact.join("　/　")}</p>`);
+  $("#expired-contact").innerHTML = lines.join("");
+}
+
 /**
  * URL からトークンを取り出す。
  *   - 本番/エミュ: /g/<token>（hosting rewrite → /receive/index.html）。
@@ -146,6 +161,7 @@ async function init() {
     if (!res.ok || !data.ok) { show("view-invalid"); return; }
 
     if (data.status === "used") { show("view-used"); return; }
+    if (data.status === "expired") { renderExpiredView(); show("view-expired"); return; }
 
     renderSelection(data);
     show("view-select");
@@ -371,6 +387,8 @@ $("#confirm-form").addEventListener("submit", async (e) => {
     // 同時確定・再確定は「使用済み」表示に倒す（二重利用防止）。
     if (res.status === 409) { show("view-used"); return; }
     if (res.status === 404) { show("view-invalid"); return; }
+    // 有効期限切れは専用画面へ（サーバが確定を弾いた）。
+    if (res.status === 410 || data.code === "expired") { renderExpiredView(); show("view-expired"); return; }
 
     // それ以外（入力不備・商品不正・通信）は同画面でエラー表示。
     const byCode = {

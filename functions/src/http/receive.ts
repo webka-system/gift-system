@@ -23,10 +23,17 @@ import { applyCors } from "./cors";
 import {
   OrderError, validateAddress, validateEmail, validateDeliveryDate, validateDeliveryTime,
 } from "./order-fields";
+import { expiryInfo } from "../config/expiry";
 
 // クエリ or ボディからトークンを取り出す。
 function tokenOf(raw: unknown): string {
   return typeof raw === "string" ? raw.trim() : "";
+}
+
+// Firestore Timestamp → ミリ秒（無ければ undefined）。有効期限の起点算出に使う。
+function toMillis(ts: unknown): number | undefined {
+  const t = ts as { toMillis?: () => number } | undefined;
+  return t && typeof t.toMillis === "function" ? t.toMillis() : undefined;
 }
 
 /**
@@ -34,6 +41,7 @@ function tokenOf(raw: unknown): string {
  *   res(200): { ok:true, status:"unused", cardType:{id,name,price},
  *              products:[{id,name,description,imageUrl,additionalImages:[],setContents}] }
  *       あるいは { ok:true, status:"used" }（使用済み＝二重利用防止表示用。商品情報は返さない）
+ *       あるいは { ok:true, status:"expired" }（有効期限切れ＝受け取り不可。商品情報は返さない）
  *   res(404): { ok:false, code:"not_found" }（無効トークン）
  */
 export const receiveGetCard = onRequest(HTTP_OPTIONS, async (req, res) => {
@@ -61,6 +69,18 @@ export const receiveGetCard = onRequest(HTTP_OPTIONS, async (req, res) => {
       selectableProductsRef.where("cardTypeId", "==", card.cardTypeId).where("active", "==", true).get(),
     ]);
     const type = typeSnap.data();
+
+    // 有効期限切れは未使用でも受け取り不可（サーバ側で確実に弾く）。generatedAt/expiryDays 未設定は無期限。
+    const exp = expiryInfo({
+      generatedAtMs: toMillis(card.generatedAt),
+      overrideDays: card.expiryDaysOverride,
+      typeDays: type?.expiryDays,
+      nowMs: Date.now(),
+    });
+    if (exp.expired) {
+      res.status(200).json({ ok: true, status: "expired" });
+      return;
+    }
     const products = prodSnap.docs.map((d) => {
       const p = d.data();
       // 追加画像・セット内容は後付けフィールド。無い既存商品でも壊れないよう既定値で返す。
@@ -98,6 +118,7 @@ export const receiveGetCard = onRequest(HTTP_OPTIONS, async (req, res) => {
  *             invalid_delivery_date / invalid_delivery_time / invalid_product
  *   res(404): not_found（無効トークン）
  *   res(409): already_used（同時確定・再確定＝二重利用防止）
+ *   res(410): expired（有効期限切れ＝未使用でも受け取り不可）
  *
  * 二重確定防止: トランザクション内で「status が unused であること」を検証してから used に更新する。
  */
@@ -135,6 +156,16 @@ export const receiveConfirm = onRequest(HTTP_OPTIONS, async (req, res) => {
 
       // 二重確定防止の要: この瞬間に unused であることを検証する。
       if (card.status !== CARD_STATUS.UNUSED) throw new OrderError(409, "already_used");
+
+      // 有効期限切れは未使用でも確定不可。クライアント判定に頼らずサーバ（トランザクション内）で確実に弾く。
+      const typeSnap = await tx.get(giftCardTypesRef.doc(card.cardTypeId));
+      const exp = expiryInfo({
+        generatedAtMs: toMillis(card.generatedAt),
+        overrideDays: card.expiryDaysOverride,
+        typeDays: typeSnap.data()?.expiryDays,
+        nowMs: Date.now(),
+      });
+      if (exp.expired) throw new OrderError(410, "expired");
 
       // 選択商品の妥当性: 実在し、同じ種別に属し、有効であること（1カード1商品 / design.md 3.3）。
       const prodDoc = await tx.get(selectableProductsRef.doc(selectedProductId));

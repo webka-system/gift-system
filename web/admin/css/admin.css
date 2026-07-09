@@ -164,6 +164,9 @@ button:disabled { opacity: .5; cursor: default; }
   font-weight: 700;
   box-shadow: 0 0 0 2px rgba(185,28,28,.25);
 }
+/* 期限切れ＝発送されず終わるカード。失敗系と同様に赤で強調。期限間近は橙で注意喚起。 */
+.badge-expired { background: var(--danger); color: #fff; font-weight: 700; }
+.badge-near { background: #ffedd5; color: #9a3412; }
 /* 状態セルは複数バッジが折り返しても見やすいよう縦揃え＋間隔。 */
 .status-cell { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
 .result { margin-top: 1rem; font-weight: 600; color: var(--ok); }
@@ -214,13 +217,16 @@ button:disabled { opacity: .5; cursor: default; }
 /* 一覧は要点だけに絞ったので、通常のPC/10インチ画面（コンテンツ幅≈960px）では横スクロールなしで収まる。
    min-width は極端に狭い画面のための下限（それ未満のときだけ .table-scroll が働く）。 */
 .cards-table { table-layout: fixed; width: 100%; min-width: 720px; }
-.cards-table .col-gen { width: 128px; }
+.cards-table .col-gen { width: 150px; }
 .cards-table .col-status { width: 148px; }
 .cards-table .col-type { width: 100px; }
 .cards-table .col-name { width: auto; }
-.cards-table .col-used { width: 128px; }
-.cards-table .col-memo { width: 150px; }
-.cards-table .col-actions { width: 168px; }
+.cards-table .col-used { width: 122px; }
+.cards-table .col-memo { width: 140px; }
+.cards-table .col-actions { width: 160px; }
+/* 生成/有効期限セルの期限行の色（切れ＝赤、間近＝橙）。 */
+.cards-table .expiry-over { color: var(--danger); font-weight: 600; }
+.cards-table .expiry-near { color: #b45309; }
 /* 省略が要る列だけクリップ（状態・操作セルには overflow を掛けない＝罫線やバッジが崩れない）。 */
 .cards-table td.ellip { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .cards-table .memo-input { width: 100%; }

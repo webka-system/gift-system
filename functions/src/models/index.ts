@@ -28,6 +28,8 @@ export interface GiftCardTypeData {
   price: number;
   /** ギフトカード側の管理商品コード。 */
   cardProductCode: string;
+  /** 有効期限の日数（デフォルト）。生成日 generatedAt からこの日数で期限切れ。未設定/0以下は無期限。 */
+  expiryDays?: number;
   /** 作成日時。 */
   createdAt: Timestamp;
   /** 有効/無効。 */
@@ -90,10 +92,12 @@ export interface GiftCardData {
   printed?: boolean;
   /** 印刷用PDFに出力した日時。 */
   printedAt?: Timestamp;
-  /** 生成日時（ロット管理用。生成バッチの時刻）。既存カードには無い場合がある（後方互換）。 */
+  /** 生成日時（ロット管理・有効期限の起点）。既存カードには無い場合がある（後方互換＝無期限扱い）。 */
   generatedAt?: Timestamp;
   /** 生成バッチID（同一の一括生成をまとめる識別子。ロット絞り込み用）。既存カードには無い場合がある。 */
   batchId?: string;
+  /** 有効期限日数の個別上書き（任意）。種別デフォルトより優先。管理者が個別に期限を延長/短縮できる。 */
+  expiryDaysOverride?: number;
 
   // ── 以下は使用（受け取り者の確定）時に書き込まれる ──
   /** 受け取り者が選んだ商品。 */

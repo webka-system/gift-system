@@ -30,7 +30,7 @@
       "**/node_modules/**"
     ],
     "predeploy": [
-      "node -e \"const fs=require('fs');fs.mkdirSync('web/shared',{recursive:true});fs.copyFileSync('shared/constants.js','web/shared/constants.js')\""
+      "node -e \"const fs=require('fs');fs.mkdirSync('web/shared',{recursive:true});fs.copyFileSync('shared/constants.js','web/shared/constants.js');fs.copyFileSync('shared/expiry.js','web/shared/expiry.js')\""
     ],
     "rewrites": [
       { "source": "/api/adminGenerateGiftCards", "function": { "functionId": "adminGenerateGiftCards", "region": "asia-northeast1" } },
@@ -43,6 +43,7 @@
       { "source": "/api/adminExportUrlXlsx", "function": { "functionId": "adminExportUrlXlsx", "region": "asia-northeast1" } },
       { "source": "/api/adminUpdateGiftCard", "function": { "functionId": "adminUpdateGiftCard", "region": "asia-northeast1" } },
       { "source": "/api/adminResetGiftCard", "function": { "functionId": "adminResetGiftCard", "region": "asia-northeast1" } },
+      { "source": "/api/adminSetCardExpiry", "function": { "functionId": "adminSetCardExpiry", "region": "asia-northeast1" } },
       { "source": "/g/**", "destination": "/receive/index.html" },
       { "source": "/admin/**", "destination": "/admin/index.html" }
     ]

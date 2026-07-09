@@ -16,12 +16,13 @@ import { onAuth, login, logout, idToken, loginErrorMessage } from "./auth.js";
 import {
   listCardTypes, createCardType, updateCardType, setCardTypeActive,
   listProductsByType, createProduct, updateProduct, deleteProduct,
-  listCards, updateCardMemo, getProductById, getCard, CARD_STATUS,
+  listCards, updateCardMemo, getProductById, getCard, deleteField, CARD_STATUS,
 } from "./db.js";
 import { uploadProductImage } from "./storage.js";
 import { neStatusInfo, statusBadgeHtml } from "./status.js";
 import { filterCards, LOT_NONE } from "./cards-filter.js";
 import { TOKEN, PRODUCT, PREFECTURES, DELIVERY, NE_STATUS } from "/shared/constants.js";
+import { expiryInfo } from "/shared/expiry.js";
 
 // ===== 小さなユーティリティ =====
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -218,6 +219,7 @@ $("#types-tbody").addEventListener("click", async (e) => {
     $("#type-name").value = t.name;
     $("#type-price").value = t.price;
     $("#type-code").value = t.cardProductCode;
+    $("#type-expiry").value = t.expiryDays ?? "";
     $("#type-submit").textContent = "種別を更新";
     $("#type-name").focus();
   }
@@ -237,11 +239,19 @@ function wireForms() {
       flash("種別名と価格は必須です。", "error");
       return;
     }
+    // 有効期限（日数）: 空欄＝無期限。正の整数のみ有効。
+    const expRaw = $("#type-expiry").value.trim();
+    const expDays = expRaw === "" ? null : Number(expRaw);
+    if (expRaw !== "" && (!Number.isInteger(expDays) || expDays <= 0)) {
+      flash("有効期限（日数）は1以上の整数、または空欄にしてください。", "error");
+      return;
+    }
     if (id) {
-      await updateCardType(id, data);
+      // 更新: 空欄なら expiryDays を削除（無期限に戻す）。
+      await updateCardType(id, { ...data, expiryDays: expDays ?? deleteField() });
       flash("種別を更新しました。");
     } else {
-      await createCardType(data);
+      await createCardType({ ...data, expiryDays: expDays ?? undefined });
       flash("種別を登録しました。");
     }
     e.target.reset();
@@ -274,6 +284,7 @@ function wireForms() {
   $("#cards-status-select").addEventListener("change", renderCards);
   $("#cards-ne-select").addEventListener("change", applyCardFilters);
   $("#cards-lot-select").addEventListener("change", applyCardFilters);
+  $("#cards-expiry-select").addEventListener("change", applyCardFilters);
   $("#cards-search").addEventListener("input", applyCardFilters);
   $("#cards-tbody").addEventListener("click", onCardsClick);
 
@@ -712,14 +723,36 @@ function tsMillis(ts) {
  * cardsCache に対して NE投入状態フィルタ＋テキスト検索を適用して描画する（クライアント側・リアルタイム）。
  * 種別・状態の変更は renderCards（再取得）側で扱う。フィルタ本体は cards-filter.js（純粋関数）。
  */
+/** カードの有効期限判定（種別デフォルト＋個別上書き＋現在時刻）。cardTypesCache を参照。 */
+function cardExpiry(c) {
+  const type = cardTypesCache.find((t) => t.id === c.cardTypeId);
+  return expiryInfo({
+    generatedAtMs: typeof c.generatedAt?.toMillis === "function" ? c.generatedAt.toMillis() : undefined,
+    overrideDays: c.expiryDaysOverride,
+    typeDays: type?.expiryDays,
+    nowMs: Date.now(),
+  });
+}
+
+/** 有効期限の表示文字列（無期限／期限日／期限切れ）。 */
+function expiryText(exp) {
+  if (!exp.hasExpiry) return "無期限";
+  const date = new Date(exp.expiryMs).toLocaleDateString("ja-JP");
+  return exp.expired ? `${date}（期限切れ）` : date;
+}
+
 function applyCardFilters() {
   const tbody = $("#cards-tbody");
   const neStatus = $("#cards-ne-select").value;               // "" or pending/submitting/...
   const batchId = $("#cards-lot-select").value;               // "" or batchId or LOT_NONE
+  const expiryFilter = $("#cards-expiry-select").value;       // "" / "expired" / "near"
   const query = $("#cards-search").value;
   const typeName = (id) => cardTypesCache.find((t) => t.id === id)?.name || id;
 
-  const rows = filterCards(cardsCache, { neStatus, batchId, query });
+  let rows = filterCards(cardsCache, { neStatus, batchId, query });
+  // 有効期限の絞り込みは種別デフォルトに依存するためクライアント側で（期限判定は共有モジュール）。
+  if (expiryFilter === "expired") rows = rows.filter((c) => cardExpiry(c).expired);
+  else if (expiryFilter === "near") rows = rows.filter((c) => { const v = cardExpiry(c); return !v.expired && v.near; });
 
   $("#cards-count").textContent = cardsCache.length
     ? `${rows.length} / ${cardsCache.length} 件`
@@ -732,16 +765,22 @@ function applyCardFilters() {
       : "検索・絞り込み条件に一致するカードがありません。");
     return;
   }
-  // 一覧は要点だけ（生成→状態→種別→受け取り者名→使用日時→memo→操作）。
+  // 一覧は要点だけ（生成日/有効期限→状態→種別→受け取り者名→使用日時→memo→操作）。
   // トークン・受け取り者URL の全文は詳細ビューと「URLコピー」で参照できるよう一覧からは外す。
   for (const c of rows) {
     const url = receiveUrl(c.token);
     const gen = c.generatedAt ? fmtDate(c.generatedAt) : "不明";
+    const exp = cardExpiry(c);
+    const expTxt = expiryText(exp);
+    const expClass = exp.expired ? "expiry-over" : (exp.near ? "expiry-near" : "muted");
     const name = c.shippingAddress?.name || "—";
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="small" title="${esc(gen)}">${esc(gen)}</td>
-      <td><span class="status-cell">${statusBadgeHtml(c)}</span></td>
+      <td class="small">
+        <div title="生成日時: ${esc(gen)}">${esc(gen)}</div>
+        <div class="small ${expClass}" title="有効期限: ${esc(expTxt)}">期限: ${esc(expTxt)}</div>
+      </td>
+      <td><span class="status-cell">${statusBadgeHtml(c, exp)}</span></td>
       <td class="ellip" title="${esc(typeName(c.cardTypeId))}">${esc(typeName(c.cardTypeId))}</td>
       <td class="ellip" title="${esc(name)}">${esc(name)}</td>
       <td class="small">${fmtDate(c.usedAt)}</td>
@@ -831,6 +870,7 @@ async function openCardDetail(cardId) {
 
   const addr = card.shippingAddress || {};
   const ne = neStatusInfo(card.neStatus);
+  const exp = cardExpiry(card);
 
   const productHtml = card.selectedProductId
     ? `<div class="detail-product">
@@ -851,9 +891,12 @@ async function openCardDetail(cardId) {
       ${addrRow("トークン", card.token)}
       ${addrRow("生成日時", card.generatedAt ? fmtDate(card.generatedAt) : "不明")}
       ${card.batchId ? addrRow("ロットID", card.batchId) : ""}
+      ${addrRow("有効期限", expiryText(exp))}
+      ${exp.hasExpiry && !exp.expired ? addrRow("期限まで", `残り ${exp.remainingDays} 日`) : ""}
+      ${card.expiryDaysOverride ? addrRow("期限の個別上書き", `${card.expiryDaysOverride} 日`) : ""}
       <div class="detail-row">
         <span class="detail-label">状態</span>
-        <span class="detail-value status-cell">${statusBadgeHtml(card)}</span>
+        <span class="detail-value status-cell">${statusBadgeHtml(card, exp)}</span>
       </div>
       ${used ? addrRow("確定日時", fmtDate(card.usedAt)) : ""}
       ${used ? addrRow("NE投入状態", ne.label) : ""}
@@ -898,6 +941,17 @@ async function openCardDetail(cardId) {
       <h3>memo（管理者記入欄）</h3>
       <textarea id="detail-memo" class="detail-memo" rows="2" placeholder="受注番号など突合用">${esc(card.memo)}</textarea>
       <div><button id="detail-memo-save" type="button">memoを保存</button></div>
+    </section>
+
+    <section class="detail-section">
+      <h3>有効期限の管理（延長・上書き）</h3>
+      <p class="muted small">個別に有効期限日数を上書きします（種別デフォルトより優先）。空欄で保存すると上書き解除（種別デフォルト／無期限に戻る）。<strong>期限切れカードもここで延長すれば再び受け取り可能</strong>になります。</p>
+      <div class="edit-form">
+        <label>上書き日数（空欄＝解除）
+          <input id="detail-expiry" type="number" min="1" step="1" value="${card.expiryDaysOverride ?? ""}" placeholder="例: 120">
+        </label>
+      </div>
+      <div><button data-act="expiry-save" type="button">有効期限を保存</button></div>
     </section>
 
     ${used ? `<section class="detail-section">
@@ -986,6 +1040,37 @@ async function onDetailClick(e) {
   if (act === "edit-cancel") { openCardDetail(detailCardId); return; }
   if (act === "edit-save") { await onEditSave(btn); return; }
   if (act === "card-reset") { await onCardReset(btn); return; }
+  if (act === "expiry-save") { await onExpirySave(btn); return; }
+}
+
+/** 有効期限の個別上書き保存（確認ダイアログ → adminSetCardExpiry）。期限切れの延長にも使う。 */
+async function onExpirySave(btn) {
+  const id = detailCardId;
+  if (!id) return;
+  const raw = $("#detail-expiry").value.trim();
+  const days = raw === "" ? null : Number(raw);
+  if (raw !== "" && (!Number.isInteger(days) || days <= 0)) {
+    return flash("上書き日数は1以上の整数、または空欄にしてください。", "error");
+  }
+  const msg = raw === ""
+    ? "有効期限の個別上書きを解除しますか？（種別デフォルト／無期限に戻ります）"
+    : `有効期限の個別上書きを「生成日から ${days} 日」に設定しますか？`;
+  if (!confirm(msg)) return;
+  btn.disabled = true;
+  try {
+    const res = await authorizedFetch("/api/adminSetCardExpiry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cardId: id, expiryDaysOverride: raw === "" ? null : days }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(editErrorMessage(data.code, res.status));
+    flash("有効期限を更新しました。");
+    await refreshDetailCard(id);
+  } catch (err) {
+    flash(`有効期限の更新に失敗しました: ${err?.message || err}`, "error");
+    btn.disabled = false;
+  }
 }
 
 // ===== 管理者による受注編集・やり直し =====

@@ -26,13 +26,16 @@ export function neStatusInfo(neStatus) {
 
 /**
  * 一覧・詳細で使う「状態」バッジ HTML を返す。
- * 未使用は1つのバッジ。使用済みは「使用済」＋ NE 投入状態の2バッジで、
- * 発送漏れの元になる「NE投入失敗」がパッと目に入るようにする（赤で強調）。
+ * 未使用は「未使用」。期限切れ（未使用のまま期限超過）は「期限切れ」を赤で強調（発送されず終わるカードなので
+ * 失敗系と同様に気づけるように）。残り日数が近い未使用は「期限間近」を付す。使用済みは「使用済」＋NE投入状態。
+ * expiry: { expired?:boolean, near?:boolean }（省略時は期限判定なし＝従来どおり）。
  * ラベルはいずれも固定の安全な文字列なのでエスケープ不要。
  */
-export function statusBadgeHtml(card) {
+export function statusBadgeHtml(card, expiry = {}) {
   if (card.status !== CARD_STATUS.USED) {
-    return `<span class="badge badge-unused">未使用</span>`;
+    if (expiry.expired) return `<span class="badge badge-expired">期限切れ</span>`;
+    return `<span class="badge badge-unused">未使用</span>` +
+      (expiry.near ? ` <span class="badge badge-near">期限間近</span>` : "");
   }
   const ne = neStatusInfo(card.neStatus);
   return `<span class="badge badge-used">使用済</span>` +

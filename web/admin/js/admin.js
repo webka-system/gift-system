@@ -20,6 +20,7 @@ import {
 } from "./db.js";
 import { uploadProductImage } from "./storage.js";
 import { neStatusInfo, statusBadgeHtml } from "./status.js";
+import { shortToken, filterCards } from "./cards-filter.js";
 import { TOKEN } from "/shared/constants.js";
 
 // ===== 小さなユーティリティ =====
@@ -256,9 +257,11 @@ function wireForms() {
   // QR生成フォーム。
   $("#generate-form").addEventListener("submit", onGenerateSubmit);
 
-  // QR一覧フィルタ。
+  // QR一覧フィルタ。種別・状態はサーバ再取得、NE投入状態・検索はクライアント側でリアルタイム絞り込み。
   $("#cards-type-select").addEventListener("change", renderCards);
   $("#cards-status-select").addEventListener("change", renderCards);
+  $("#cards-ne-select").addEventListener("change", applyCardFilters);
+  $("#cards-search").addEventListener("input", applyCardFilters);
   $("#cards-tbody").addEventListener("click", onCardsClick);
 
   // 受注詳細モーダル（グループB）。
@@ -498,28 +501,51 @@ async function onGenerateSubmit(e) {
 // 現在描画中のカード一覧。詳細ビューがカードを引くために保持する。
 let cardsCache = [];
 
+/**
+ * QR一覧の取得（サーバ側フィルタ＝種別・状態で直Firestore問い合わせ）→ 全件を cardsCache に保持。
+ * NE投入状態・テキスト検索はクライアント側フィルタなので、取得後に applyCardFilters で描画する。
+ */
 async function renderCards() {
   const cardTypeId = $("#cards-type-select").value || undefined;
   const status = $("#cards-status-select").value || undefined;
   const tbody = $("#cards-tbody");
   tableLoading(tbody, 7);
-  const cards = await listCards({ cardTypeId, status });
-  cardsCache = cards;
+  cardsCache = await listCards({ cardTypeId, status });
+  applyCardFilters();
+}
+
+/**
+ * cardsCache に対して NE投入状態フィルタ＋テキスト検索を適用して描画する（クライアント側・リアルタイム）。
+ * 種別・状態の変更は renderCards（再取得）側で扱う。フィルタ本体は cards-filter.js（純粋関数）。
+ */
+function applyCardFilters() {
+  const tbody = $("#cards-tbody");
+  const neStatus = $("#cards-ne-select").value;               // "" or pending/submitting/...
+  const query = $("#cards-search").value;
   const typeName = (id) => cardTypesCache.find((t) => t.id === id)?.name || id;
+
+  const rows = filterCards(cardsCache, { neStatus, query });
+
+  $("#cards-count").textContent = cardsCache.length
+    ? `${rows.length} / ${cardsCache.length} 件`
+    : "";
+
   tbody.innerHTML = "";
-  if (cards.length === 0) {
-    tableEmpty(tbody, 7, "該当するカードがありません。");
+  if (rows.length === 0) {
+    tableEmpty(tbody, 7, cardsCache.length === 0
+      ? "該当するカードがありません。"
+      : "検索・絞り込み条件に一致するカードがありません。");
     return;
   }
-  for (const c of cards) {
+  for (const c of rows) {
     const url = receiveUrl(c.token);
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="mono small">${esc(c.token)}</td>
-      <td>${esc(typeName(c.cardTypeId))}</td>
+      <td class="mono small col-token" title="${esc(c.token)}">${esc(shortToken(c.token))}</td>
+      <td title="${esc(typeName(c.cardTypeId))}">${esc(typeName(c.cardTypeId))}</td>
       <td class="status-cell">${statusBadgeHtml(c)}</td>
       <td class="url-cell">
-        <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>
+        <a href="${esc(url)}" target="_blank" rel="noopener" title="${esc(url)}">${esc(url)}</a>
         <button class="copy-btn" data-act="copy-url" data-url="${esc(url)}" title="URLをコピー">コピー</button>
       </td>
       <td>${fmtDate(c.usedAt)}</td>

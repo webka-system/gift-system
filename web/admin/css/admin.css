@@ -208,6 +208,39 @@ button:disabled { opacity: .5; cursor: default; }
   font-size: .78rem;
 }
 
+/* ===== QR一覧テーブル（table-layout:fixed で列幅を固定し、長い値でも枠が崩れない） ===== */
+/* 狭い画面でも列が潰れないよう、テーブルは最小幅を持ちラッパ内で横スクロールさせる。 */
+.table-scroll { overflow-x: auto; }
+.cards-table { table-layout: fixed; min-width: 900px; }
+.cards-table th, .cards-table td { overflow: hidden; }
+.cards-table .col-token { width: 96px; }
+.cards-table .col-type { width: 104px; }
+.cards-table .col-status { width: 132px; }
+.cards-table .col-url { width: auto; }
+.cards-table .col-date { width: 136px; }
+.cards-table .col-memo { width: 150px; }
+.cards-table .col-actions { width: 140px; }
+/* トークン（短縮表示）と種別は1行省略。全文は title 属性でツールチップ表示。 */
+.cards-table td.col-token,
+.cards-table tbody td:nth-child(2) { white-space: nowrap; text-overflow: ellipsis; }
+/* 受け取り者URL: リンクは1行省略＋…、コピーボタンは下段。全文は title とコピーで参照可能。 */
+.cards-table .url-cell { max-width: none; }
+.cards-table .url-cell a {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  word-break: normal;
+}
+.cards-table .memo-input { width: 100%; }
+/* 操作列は2ボタン。狭ければ折り返して縦積みにする（枠からはみ出さない）。 */
+.cards-table .row-actions { flex-wrap: wrap; }
+
+/* QR一覧の検索・絞り込みバー。 */
+#cards-search { min-width: 220px; }
+.filters .search { flex: 1 1 220px; }
+
 .flash {
   position: fixed;
   top: 1rem;

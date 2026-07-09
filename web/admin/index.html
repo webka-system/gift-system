@@ -113,11 +113,31 @@
               <option value="used">使用済</option>
             </select>
           </label>
+          <label class="inline">NE投入
+            <select id="cards-ne-select">
+              <option value="">すべて</option>
+              <option value="pending">NE未投入</option>
+              <option value="submitting">NE投入中</option>
+              <option value="submitted">NE投入済</option>
+              <option value="csv">CSV出力済</option>
+              <option value="error">NE投入失敗</option>
+            </select>
+          </label>
+          <label class="inline search">検索
+            <input id="cards-search" type="search" placeholder="名前・カナ・メール・memo・トークン" autocomplete="off" />
+          </label>
+          <span id="cards-count" class="muted small"></span>
         </div>
-        <table class="data-table">
-          <thead><tr><th>トークン</th><th>種別</th><th>状態</th><th>受け取り者URL</th><th>使用日時</th><th>memo</th><th></th></tr></thead>
-          <tbody id="cards-tbody"></tbody>
-        </table>
+        <div class="table-scroll">
+          <table class="data-table cards-table">
+            <colgroup>
+              <col class="col-token" /><col class="col-type" /><col class="col-status" />
+              <col class="col-url" /><col class="col-date" /><col class="col-memo" /><col class="col-actions" />
+            </colgroup>
+            <thead><tr><th>トークン</th><th>種別</th><th>状態</th><th>受け取り者URL</th><th>使用日時</th><th>memo</th><th></th></tr></thead>
+            <tbody id="cards-tbody"></tbody>
+          </table>
+        </div>
       </section>
 
       <!-- 印刷用URL一覧（Excel） -->

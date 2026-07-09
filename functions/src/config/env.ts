@@ -35,6 +35,9 @@ export const NE_STORE_CODE = process.env.NE_STORE_CODE || "2";
 // (b) アップロードAPIに渡す受注一括登録パターンID。**store code(2)とは別番号**。
 //   ★実値は info API で receive_order_upload_pattern_shop_id=NE_STORE_CODE のパターンを照合して特定して設定する
 //     （ne/upload-pattern.ts の resolveUploadPatternId）。決め打ちしない。未設定（空）＝実接続前。
+//   ★GAS実測で判明した想定値: **店舗2(makeshop)のパターンID = 4**（resolveUploadPatternId("2") が返すべき値・検算用。
+//     ne/upload-pattern.ts の NE_KNOWN_PATTERN_ID_SHOP2）。ただし実測時点で当該パターンは deleted_flag=無効だったため、
+//     実接続でアップロードが弾かれたら NE 管理画面で店舗2のパターンを有効化すること（下記 upload-pattern.ts 参照）。
 export const NE_UPLOAD_PATTERN_ID = process.env.NE_UPLOAD_PATTERN_ID || "";
 
 export interface NeConfig {

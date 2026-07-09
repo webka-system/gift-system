@@ -80,25 +80,46 @@ async function lookupPostalCode() {
   const status = $("#zip-status");
   if (!zipInput) return;
   const digits = (zipInput.value || "").replace(/[^0-9]/g, "");
+  const setNote = (cls, msg) => { if (status) { status.className = `field-note ${cls}`; status.textContent = msg; } };
   if (digits.length !== 7) return; // 7桁そろうまで何もしない。
-  if (status) status.textContent = "住所を検索中…";
+  setNote("searching", "住所を検索中…");
   try {
     const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${digits}`);
     const data = await res.json().catch(() => ({}));
     const hit = Array.isArray(data.results) ? data.results[0] : null;
     if (!hit) {
-      if (status) status.textContent = "該当する住所が見つかりませんでした。手入力してください。";
+      setNote("warn", "該当する住所が見つかりませんでした。手入力してください。");
       return;
     }
     // 都道府県プルダウン（address1 は PREFECTURES と一致）。
     const prefSel = $('select[name="prefecture"]');
-    if (prefSel && hit.address1) prefSel.value = hit.address1;
+    if (prefSel && hit.address1) { prefSel.value = hit.address1; prefSel.classList.remove("invalid"); }
     // 住所欄は市区町村＋町域を補完（番地・建物は利用者が続けて入力）。
     const addrInput = $('input[name="address"]');
-    if (addrInput) addrInput.value = `${hit.address2 || ""}${hit.address3 || ""}`;
-    if (status) status.textContent = "住所を自動入力しました。番地・建物名を続けてご入力ください。";
+    if (addrInput) { addrInput.value = `${hit.address2 || ""}${hit.address3 || ""}`; addrInput.classList.remove("invalid"); }
+    setNote("ok", "住所を自動入力しました。番地・建物名を続けてご入力ください。");
   } catch (_) {
-    if (status) status.textContent = "住所の自動入力に失敗しました。手入力してください。";
+    setNote("warn", "住所の自動入力に失敗しました。手入力してください。");
+  }
+}
+
+/** 入力エラーの赤枠をすべて解除（確定を押し直す前にリセット）。 */
+function clearInvalidFields() {
+  for (const el of document.querySelectorAll(".address-form .invalid")) el.classList.remove("invalid");
+  const list = document.querySelector("#product-list");
+  if (list) list.classList.remove("invalid");
+}
+
+/** 指定の name の欄を赤枠にし、最初の欄へフォーカス＆スクロール（どこを直せばよいか示す）。 */
+function markInvalidFields(names) {
+  let first = null;
+  for (const n of names) {
+    const el = document.querySelector(`.address-form [name="${n}"]`);
+    if (el) { el.classList.add("invalid"); if (!first) first = el; }
+  }
+  if (first) {
+    try { first.focus({ preventScroll: true }); } catch (_) { /* noop */ }
+    first.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 }
 
@@ -320,14 +341,21 @@ function setupProductModal() {
   });
 }
 
+// 入力を直したら、その欄の赤枠を即解除（フィードバック）。
+$("#confirm-form").addEventListener("input", (e) => { e.target.classList && e.target.classList.remove("invalid"); });
+$("#confirm-form").addEventListener("change", (e) => { e.target.classList && e.target.classList.remove("invalid"); });
+
 $("#confirm-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const err = $("#form-error");
   err.hidden = true;
+  clearInvalidFields();
 
   if (!selectedProductId) {
-    err.textContent = "商品を1つ選択してください。";
+    err.textContent = "商品を1つ選んでください。";
     err.hidden = false;
+    const list = $("#product-list");
+    if (list) { list.classList.add("invalid"); list.scrollIntoView({ block: "center", behavior: "smooth" }); }
     return;
   }
 
@@ -346,26 +374,27 @@ $("#confirm-form").addEventListener("submit", async (e) => {
   const deliveryDate = g("deliveryDate");
   const deliveryTime = g("deliveryTime");
 
-  // --- クライアント側の事前チェック（サーバでも同じ内容を検証する）---
-  const fail = (msg) => { err.textContent = msg; err.hidden = false; };
-  if (!shippingAddress.name || !shippingAddress.postalCode || !shippingAddress.prefecture
-      || !shippingAddress.address || !shippingAddress.phone) {
-    return fail("お届け先の必須項目をご確認ください。");
+  // --- クライアント側の事前チェック（サーバでも同じ内容を検証する）。エラー時は該当欄を赤枠で示す ---
+  const fail = (msg, fields = []) => { err.textContent = msg; err.hidden = false; markInvalidFields(fields); };
+  // 必須（住所ブロック）の未入力欄を特定して示す。
+  const missing = ["name", "postalCode", "prefecture", "address", "phone"].filter((k) => !shippingAddress[k]);
+  if (missing.length) {
+    return fail("未入力の必須項目があります。赤枠の欄をご入力ください。", missing);
   }
   if (!KANA_RE.test(shippingAddress.nameKana)) {
-    return fail("お名前（カナ）は全角カナで入力してください。");
+    return fail("お名前（カナ）は全角カナでご入力ください。", ["nameKana"]);
   }
   if (!EMAIL_RE.test(email)) {
-    return fail("メールアドレスの形式をご確認ください。");
+    return fail("メールアドレスの形式をご確認ください。", ["email"]);
   }
   if (deliveryDate) {
     const { min, max } = deliveryDateBounds();
     if (deliveryDate < min || deliveryDate > max) {
-      return fail("配達希望日は指定できる範囲外です。選び直してください。");
+      return fail("配達希望日は指定できる範囲外です。選び直してください。", ["deliveryDate"]);
     }
   }
   if (deliveryTime && !DELIVERY.TIME_SLOTS.includes(deliveryTime)) {
-    return fail("配達希望時間帯の指定が正しくありません。");
+    return fail("配達希望時間帯の指定が正しくありません。", ["deliveryTime"]);
   }
 
   const btn = $("#confirm-btn");

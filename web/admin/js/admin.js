@@ -284,6 +284,8 @@ function wireForms() {
   $("#cards-status-select").addEventListener("change", renderCards);
   $("#cards-ne-select").addEventListener("change", applyCardFilters);
   $("#cards-lot-select").addEventListener("change", applyCardFilters);
+  $("#cards-gen-from").addEventListener("change", applyCardFilters);
+  $("#cards-gen-to").addEventListener("change", applyCardFilters);
   $("#cards-expiry-select").addEventListener("change", applyCardFilters);
   $("#cards-search").addEventListener("input", applyCardFilters);
   $("#cards-tbody").addEventListener("click", onCardsClick);
@@ -323,8 +325,10 @@ async function onExportUrlXlsx() {
     if (typeId) params.set("cardTypeId", typeId);
     const lot = $("#print-lot-select").value;
     if (lot) params.set("batchId", lot);
-    const genDate = $("#print-gen-date").value;
-    if (genDate) params.set("generatedDate", genDate);
+    const genFrom = $("#print-gen-from").value;
+    if (genFrom) params.set("generatedFrom", genFrom);
+    const genTo = $("#print-gen-to").value;
+    if (genTo) params.set("generatedTo", genTo);
     if ($("#print-unprinted").checked) params.set("unprintedOnly", "1");
     if ($("#print-mark").checked) params.set("markPrinted", "1");
     if ($("#print-urlonly").checked) params.set("urlOnly", "1");
@@ -690,8 +694,12 @@ async function renderCards() {
   applyCardFilters();
 }
 
+// ロットのプルダウンに直近何件まで出すか（それより古いロットは生成日の範囲指定で絞り込む）。
+const LOT_RECENT_LIMIT = 25;
+
 /**
  * ロット（生成バッチ）絞り込みの <option> HTML を、カード配列から組み立てる。
+ * 生成日時の新しい順に **直近 LOT_RECENT_LIMIT 件だけ**表示（肥大化防止）。古い分は日付範囲で絞る。
  * batchId ごとに生成日時ラベル＋枚数。生成日時不明（batchId 無し）はまとめて1項目（LOT_NONE）。
  * QR一覧フィルタと印刷タブの両方で共用する。
  */
@@ -705,12 +713,25 @@ function lotOptionsHtml(cards) {
     byBatch.set(c.batchId, e);
   }
   const entries = [...byBatch.entries()].sort((a, b) => tsMillis(b[1].generatedAt) - tsMillis(a[1].generatedAt));
+  const shown = entries.slice(0, LOT_RECENT_LIMIT);
   let html = `<option value="">すべて</option>`;
-  for (const [batchId, e] of entries) {
+  for (const [batchId, e] of shown) {
     html += `<option value="${esc(batchId)}">${esc(fmtDate(e.generatedAt) || "不明")}（${e.count}枚）</option>`;
+  }
+  const hidden = entries.length - shown.length;
+  if (hidden > 0) {
+    html += `<option value="" disabled>― 古いロット ${hidden} 件は「生成日の範囲」で絞り込み ―</option>`;
   }
   if (noneCount) html += `<option value="${LOT_NONE}">生成日時不明（${noneCount}枚）</option>`;
   return html;
+}
+
+/** カードの生成日（JST・YYYY-MM-DD）。generatedAt 無しは null。生成日の範囲フィルタで使う。 */
+function cardGenDateJst(c) {
+  const ms = typeof c.generatedAt?.toMillis === "function" ? c.generatedAt.toMillis() : null;
+  if (ms === null) return null;
+  const j = new Date(ms + 9 * 60 * 60 * 1000); // JST
+  return `${j.getUTCFullYear()}-${String(j.getUTCMonth() + 1).padStart(2, "0")}-${String(j.getUTCDate()).padStart(2, "0")}`;
 }
 
 /** QR一覧のロット絞り込みを取得済みカードから最新化する。 */
@@ -771,7 +792,13 @@ function applyCardFilters() {
   const query = $("#cards-search").value;
   const typeName = (id) => cardTypesCache.find((t) => t.id === id)?.name || id;
 
+  const genFrom = $("#cards-gen-from").value;
+  const genTo = $("#cards-gen-to").value;
+
   let rows = filterCards(cardsCache, { neStatus, batchId, query });
+  // 生成日の範囲（JST）で絞り込み。ロットが増えても期間指定で対象を絞れる。generatedAt 無しは範囲対象外。
+  if (genFrom) rows = rows.filter((c) => { const d = cardGenDateJst(c); return d !== null && d >= genFrom; });
+  if (genTo) rows = rows.filter((c) => { const d = cardGenDateJst(c); return d !== null && d <= genTo; });
   // 有効期限の絞り込みは種別デフォルトに依存するためクライアント側で（期限判定は共有モジュール）。
   if (expiryFilter === "expired") rows = rows.filter((c) => cardExpiry(c).expired);
   else if (expiryFilter === "near") rows = rows.filter((c) => { const v = cardExpiry(c); return !v.expired && v.near; });

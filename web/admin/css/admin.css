@@ -135,6 +135,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
   padding: 1rem;
 }
 .print-controls .field { display: flex; flex-direction: column; gap: .25rem; font-size: .85rem; }
+.date-range { display: inline-flex; align-items: center; gap: .3rem; }
+.date-range input { width: auto; }
 .print-controls .check { display: inline-flex; align-items: center; gap: .4rem; font-size: .9rem; }
 
 button {

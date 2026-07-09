@@ -35,9 +35,11 @@ function genDateJst(ts: unknown): string | null {
 }
 
 /**
- * GET /api/adminExportUrlXlsx?cardTypeId=...&batchId=...&generatedDate=YYYY-MM-DD&unprintedOnly=1&markPrinted=1&urlOnly=1
- *   対象カードの受け取り者URLを xlsx で返す。種別・ロット(batchId)・生成日・未印刷 を組み合わせて絞り込める。
- *   batchId=__none__ は生成日時不明（batchId 無し）の既存カード。generatedDate は生成日(JST)一致。
+ * GET /api/adminExportUrlXlsx?cardTypeId=...&batchId=...&generatedDate=YYYY-MM-DD
+ *        &generatedFrom=YYYY-MM-DD&generatedTo=YYYY-MM-DD&unprintedOnly=1&markPrinted=1&urlOnly=1
+ *   対象カードの受け取り者URLを xlsx で返す。種別・ロット(batchId)・生成日(単日/範囲)・未印刷 を組み合わせ可。
+ *   batchId=__none__ は生成日時不明（batchId 無し）の既存カード。generatedFrom/To は生成日(JST)の範囲（両端含む）。
+ *   ロットが増えても期間指定で対象を絞れる（プルダウンは直近のみ表示するため）。
  *   res: xlsx（各行に受け取り者URL）。対象0件でも（ヘッダのみ／空の）xlsxを返す。
  */
 export const adminExportUrlXlsx = onRequest(HTTP_OPTIONS, async (req, res) => {
@@ -51,6 +53,9 @@ export const adminExportUrlXlsx = onRequest(HTTP_OPTIONS, async (req, res) => {
   const cardTypeId = typeof req.query.cardTypeId === "string" ? req.query.cardTypeId.trim() : "";
   const batchId = typeof req.query.batchId === "string" ? req.query.batchId.trim() : "";
   const generatedDate = typeof req.query.generatedDate === "string" ? req.query.generatedDate.trim() : "";
+  // 生成日の範囲（JST・YYYY-MM-DD）。ロットが増えても期間指定で対象を絞れる。
+  const generatedFrom = typeof req.query.generatedFrom === "string" ? req.query.generatedFrom.trim() : "";
+  const generatedTo = typeof req.query.generatedTo === "string" ? req.query.generatedTo.trim() : "";
   const unprintedOnly = req.query.unprintedOnly === "1" || req.query.unprintedOnly === "true";
   const markPrinted = req.query.markPrinted === "1" || req.query.markPrinted === "true";
   const urlOnly = req.query.urlOnly === "1" || req.query.urlOnly === "true" ? true : undefined;
@@ -69,9 +74,12 @@ export const adminExportUrlXlsx = onRequest(HTTP_OPTIONS, async (req, res) => {
       const tb = b.data().createdAt?.toMillis?.() ?? 0;
       return ta - tb;
     });
-    // メモリ側フィルタ: ロット不明（batchId 無し）／生成日(JST)一致。後方互換で generatedAt 無しは生成日一致に含めない。
+    // メモリ側フィルタ: ロット不明（batchId 無し）／生成日(JST)の一致・範囲。
+    // 後方互換で generatedAt 無しのカードは、生成日の一致/範囲フィルタには含めない（不明ロットで拾う）。
     if (batchId === LOT_NONE) docs = docs.filter((d) => !d.data().batchId);
     if (generatedDate) docs = docs.filter((d) => genDateJst(d.data().generatedAt) === generatedDate);
+    if (generatedFrom) docs = docs.filter((d) => { const g = genDateJst(d.data().generatedAt); return g !== null && g >= generatedFrom; });
+    if (generatedTo) docs = docs.filter((d) => { const g = genDateJst(d.data().generatedAt); return g !== null && g <= generatedTo; });
 
     // 種別名をまとめて解決（N+1回避）。
     const typeIds = [...new Set(docs.map((d) => d.data().cardTypeId).filter(Boolean))];
@@ -104,7 +112,7 @@ export const adminExportUrlXlsx = onRequest(HTTP_OPTIONS, async (req, res) => {
     res.set("Content-Type", XLSX_MIME);
     res.set("Content-Disposition", 'attachment; filename="qr-urls.xlsx"');
     res.status(200).send(buf);
-    logger.info("adminExportUrlXlsx", { count: rows.length, cardTypeId: cardTypeId || null, batchId: batchId || null, generatedDate: generatedDate || null, unprintedOnly, markPrinted, urlOnly: !!urlOnly });
+    logger.info("adminExportUrlXlsx", { count: rows.length, cardTypeId: cardTypeId || null, batchId: batchId || null, generatedDate: generatedDate || null, generatedFrom: generatedFrom || null, generatedTo: generatedTo || null, unprintedOnly, markPrinted, urlOnly: !!urlOnly });
   } catch (err) {
     logger.error("adminExportUrlXlsx failed", { message: err instanceof Error ? err.message : "unknown" });
     res.status(500).json({ ok: false, code: "internal" });

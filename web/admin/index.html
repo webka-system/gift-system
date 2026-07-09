@@ -134,6 +134,11 @@
           <label class="inline">ロット（生成）
             <select id="cards-lot-select"><option value="">すべて</option></select>
           </label>
+          <label class="inline">生成日
+            <input id="cards-gen-from" type="date" title="生成日（開始）" />
+            <span class="muted">〜</span>
+            <input id="cards-gen-to" type="date" title="生成日（終了）" />
+          </label>
           <label class="inline">有効期限
             <select id="cards-expiry-select">
               <option value="">すべて</option>
@@ -165,13 +170,15 @@
         <div class="print-controls">
           <label class="field">種別<select id="print-type-select"></select></label>
           <label class="field">ロット（生成）<select id="print-lot-select"><option value="">すべて</option></select></label>
-          <label class="field">生成日<input id="print-gen-date" type="date" /></label>
+          <label class="field">生成日（範囲）
+            <span class="date-range"><input id="print-gen-from" type="date" title="生成日（開始）" /> 〜 <input id="print-gen-to" type="date" title="生成日（終了）" /></span>
+          </label>
           <label class="check"><input id="print-unprinted" type="checkbox" /> 未印刷分のみ</label>
           <label class="check"><input id="print-mark" type="checkbox" /> 出力分を「印刷済み」にする</label>
           <label class="check"><input id="print-urlonly" type="checkbox" /> A列（URL）のみで出力</label>
           <button id="print-btn" type="button" class="primary-btn">Excelをダウンロード</button>
         </div>
-        <p class="muted small">ロット・生成日・種別・未印刷は組み合わせて絞り込めます（例：このロットの未印刷のみ）。生成日時が不明な既存カードはロット欄の「生成日時不明」で選べます。</p>
+        <p class="muted small">ロット・生成日の範囲・種別・未印刷は組み合わせて絞り込めます（例：この期間の未印刷のみ）。ロットのプルダウンは直近分だけ表示するので、古いロットは「生成日（範囲）」で絞り込んでください。生成日時が不明な既存カードはロット欄の「生成日時不明」で選べます。</p>
         <p id="print-result" class="result"></p>
       </section>
 

@@ -46,11 +46,26 @@
         <h2>2. お届け先を入力</h2>
         <div class="address-form">
           <label>お名前<input name="name" type="text" autocomplete="name" required /></label>
+          <label>お名前（カナ）<input name="nameKana" type="text" placeholder="ヤマダ タロウ" required /></label>
+          <label>メールアドレス<input name="email" type="email" inputmode="email" autocomplete="email" placeholder="example@example.com" required /></label>
+          <label>メールアドレス（確認）<input name="emailConfirm" type="email" inputmode="email" autocomplete="off" placeholder="確認のため再度入力" required /></label>
           <label>郵便番号<input name="postalCode" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="1234567" required /></label>
           <label>都道府県<input name="prefecture" type="text" autocomplete="address-level1" required /></label>
           <label>住所（市区町村・番地）<input name="address" type="text" autocomplete="address-level2" required /></label>
           <label>建物名・部屋番号（任意）<input name="building" type="text" autocomplete="off" /></label>
           <label>電話番号<input name="phone" type="tel" inputmode="tel" autocomplete="tel" required /></label>
+        </div>
+
+        <h2>3. 配達希望（任意）</h2>
+        <p class="muted small">ご希望がなければ「指定なし」のままで結構です。</p>
+        <div class="address-form">
+          <label>配達希望日<input name="deliveryDate" type="date" /></label>
+          <label>配達希望時間帯
+            <select name="deliveryTime">
+              <option value="">指定なし（おまかせ）</option>
+              <!-- 時間帯の選択肢は receive.js が DELIVERY.TIME_SLOTS から生成 -->
+            </select>
+          </label>
         </div>
 
         <p id="form-error" class="error" hidden></p>

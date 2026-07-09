@@ -8,9 +8,10 @@ import { NeCsvRow, buildNeCsvString, toShiftJisBuffer, NE_CSV_COLUMNS } from "..
 
 function row(overrides: Partial<NeCsvRow> = {}): NeCsvRow {
   return {
-    token: "tok1", cardTypeName: "3万円", productName: "商品A", neProductCode: "NE-A", quantity: 1,
-    name: "山田太郎", postalCode: "1234567", prefecture: "東京都", address: "千代田区1-1",
-    building: "101", phone: "0312345678", usedAt: "2026-07-08T00:00:00.000Z", memo: "",
+    slipNo: "tok1", orderDate: "2026-07-08", name: "山田太郎", nameKana: "ヤマダタロウ",
+    postalCode: "1234567", address: "東京都 千代田区1-1 101", phone: "0312345678",
+    email: "taro@example.com", productName: "商品A", neProductCode: "NE-A", quantity: 1,
+    deliveryDate: "", deliveryTime: "", cardTypeName: "3万円", memo: "",
     ...overrides,
   };
 }

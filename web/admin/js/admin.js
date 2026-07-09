@@ -641,11 +641,21 @@ async function openCardDetail(cardId) {
       <h3>配送先住所</h3>
       ${used
         ? addrRow("氏名", addr.name) +
+          addrRow("氏名カナ", addr.nameKana) +
           addrRow("郵便番号", addr.postalCode) +
           addrRow("都道府県", addr.prefecture) +
           addrRow("住所", addr.address) +
           addrRow("建物名・部屋番号", addr.building) +
           addrRow("電話番号", addr.phone)
+        : `<span class="muted">未入力（未使用カード）</span>`}
+    </section>
+
+    <section class="detail-section">
+      <h3>連絡先・配達希望</h3>
+      ${used
+        ? addrRow("メールアドレス", card.recipientEmail) +
+          addrRow("配達希望日", card.deliveryDate || "指定なし（おまかせ）") +
+          addrRow("配達希望時間帯", card.deliveryTime || "指定なし（おまかせ）")
         : `<span class="muted">未入力（未使用カード）</span>`}
     </section>
 

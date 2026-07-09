@@ -12,7 +12,7 @@
 
 import { logger } from "firebase-functions/v2";
 import { FieldValue } from "firebase-admin/firestore";
-import { CARD_STATUS, NE_STATUS } from "../config/constants";
+import { CARD_STATUS, NE_STATUS, NE_FIXED } from "../config/constants";
 import { neConfig } from "../config/env";
 import { db, giftCardsRef, selectableProductsRef } from "../lib/firestore";
 import { neApiCall, NeCallDeps } from "./client";
@@ -48,11 +48,19 @@ export async function trySubmitCard(cardId: string, deps: NeCallDeps = {}): Prom
     if (!prod) throw new Error("selected product not found");
     if (!claimed.shippingAddress) throw new Error("shippingAddress missing");
 
+    const usedAt = claimed.usedAt as { toDate?: () => Date } | undefined;
+    const orderDate = usedAt?.toDate ? usedAt.toDate().toISOString().slice(0, 10) : "";
+
     const params = buildOrderParams({
       token: claimed.token,
+      orderDate,
       neProductCode: prod.neProductCode,
-      quantity: 1, // 1カード=1商品（design.md 3.3）
+      productName: prod.name,
+      quantity: NE_FIXED.QUANTITY, // 1カード=1商品（design.md 3.3）
       address: claimed.shippingAddress,
+      email: claimed.recipientEmail || "",
+      deliveryDate: claimed.deliveryDate,
+      deliveryTime: claimed.deliveryTime,
     });
 
     await neApiCall(neConfig().orderEndpoint, params, deps);

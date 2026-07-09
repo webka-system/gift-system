@@ -12,38 +12,60 @@
  */
 
 import * as iconv from "iconv-lite";
+import { NE_FIXED } from "../config/constants";
+import { neDeliveryTime } from "./order";
 
-/** CSV 1行分の元データ（確定済み受注）。 */
+/**
+ * CSV 1行分の元データ（確定済み受注）。受注者＝発送先＝受け取り者なので、
+ * 氏名・カナ・郵便番号・住所・電話は受注/発送の両ブロックで同じ値を使う。
+ * 住所（address）は都道府県+市区町村番地+建物を結合済みの1文字列。
+ */
 export interface NeCsvRow {
-  token: string;
-  cardTypeName: string;
-  productName: string;
-  neProductCode: string;
-  quantity: number;
-  name: string;
-  postalCode: string;
-  prefecture: string;
-  address: string;
-  building: string;
-  phone: string;
-  usedAt: string; // ISO or 表示用文字列
-  memo: string;
+  slipNo: string;       // 店舗伝票番号（token）
+  orderDate: string;    // 受注日（usedAt を整形）
+  name: string;         // 氏名（受注名＝発送先名）
+  nameKana: string;     // 氏名カナ
+  postalCode: string;   // 郵便番号
+  address: string;      // 結合済み住所（都道府県+市区町村番地+建物）
+  phone: string;        // 電話番号
+  email: string;        // 受注メールアドレス
+  productName: string;  // 商品名
+  neProductCode: string; // 商品コード
+  quantity: number;     // 受注数量（=1）
+  deliveryDate: string; // 配達希望日（任意 / 空欄可）
+  deliveryTime: string; // 配達希望時間帯（本システム表記。列側で NE 表記へ変換）
+  cardTypeName: string; // 参考: カード種別（突合用）
+  memo: string;         // 参考: 管理者memo（突合用）
 }
 
-/** 列定義（ヘッダ表示名 → 値の取り出し）。★NEテンプレ確定時にここを差し替える。 */
+/**
+ * 列定義（ヘッダ表示名 → 値の取り出し）。§2 の NE 受注CSV項目に対応。
+ * ★列順・列名は NE の汎用標準パターン設定に依存。確定したらここを差し替える。
+ * 支払方法・発送方法・商品価格は固定値（NE_FIXED）。受注者ブロックと発送先ブロックは同値。
+ */
 export const NE_CSV_COLUMNS: { header: string; get: (r: NeCsvRow) => string | number }[] = [
-  { header: "商品コード", get: (r) => r.neProductCode },
+  { header: "店舗伝票番号", get: (r) => r.slipNo },
+  { header: "受注日", get: (r) => r.orderDate },
+  { header: "受注名", get: (r) => r.name },
+  { header: "受注名カナ", get: (r) => r.nameKana },
+  { header: "受注郵便番号", get: (r) => r.postalCode },
+  { header: "受注住所", get: (r) => r.address },
+  { header: "受注電話番号", get: (r) => r.phone },
+  { header: "受注メールアドレス", get: (r) => r.email },
+  { header: "発送先名", get: (r) => r.name },
+  { header: "発送先カナ", get: (r) => r.nameKana },
+  { header: "発送郵便番号", get: (r) => r.postalCode },
+  { header: "発送先住所", get: (r) => r.address },
+  { header: "発送電話番号", get: (r) => r.phone },
+  { header: "支払方法", get: () => NE_FIXED.PAYMENT_METHOD },
+  { header: "発送方法", get: () => NE_FIXED.SHIPPING_METHOD },
+  { header: "配達希望日", get: (r) => r.deliveryDate },
+  { header: "配達希望時間帯", get: (r) => neDeliveryTime(r.deliveryTime) },
   { header: "商品名", get: (r) => r.productName },
-  { header: "数量", get: (r) => r.quantity },
-  { header: "送り先氏名", get: (r) => r.name },
-  { header: "郵便番号", get: (r) => r.postalCode },
-  { header: "都道府県", get: (r) => r.prefecture },
-  { header: "住所", get: (r) => r.address },
-  { header: "建物名", get: (r) => r.building },
-  { header: "電話番号", get: (r) => r.phone },
+  { header: "商品コード", get: (r) => r.neProductCode },
+  { header: "商品価格", get: () => NE_FIXED.PRODUCT_PRICE },
+  { header: "受注数量", get: (r) => r.quantity },
   { header: "カード種別", get: (r) => r.cardTypeName },
-  { header: "トークン", get: (r) => r.token },
-  { header: "確定日時", get: (r) => r.usedAt },
   { header: "memo", get: (r) => r.memo },
 ];
 

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 受け取り者API（design.md 4.2 / 第9章 手順5）
  *
  * 受け取り者フローは **全面 Cloud Functions 経由**。トークン照合・確定・使用済み化をサーバ側で行い、
@@ -15,11 +15,18 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 import { FieldValue } from "firebase-admin/firestore";
-import { CARD_STATUS, NE_STATUS } from "../config/constants";
+import { CARD_STATUS, NE_STATUS, DELIVERY } from "../config/constants";
 import { HTTP_OPTIONS } from "./options";
 import { db, giftCardsRef, giftCardTypesRef, selectableProductsRef } from "../lib/firestore";
 import { ShippingAddress } from "../models";
 import { applyCors } from "./cors";
+
+// 全角カナ（カタカナブロック U+30A0–30FF ＋全角スペース U+3000 ＋半角空白）。氏名カナの形式チェック用。
+const KANA_RE = /^[゠-ヿ\u3000\s]+$/;
+// 簡易メール形式（前後空白なし・@・ドメインにドット）。
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// クライアントの日付操作を信用しないためのサーバ側 JST 基準。
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 // ざっくりした業務エラー（HTTPステータスへマップする）。
 class ReceiveError extends Error {
@@ -39,6 +46,7 @@ function validateAddress(raw: unknown): ShippingAddress {
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
   const addr: ShippingAddress = {
     name: str(a.name),
+    nameKana: str(a.nameKana),
     postalCode: str(a.postalCode),
     prefecture: str(a.prefecture),
     address: str(a.address),
@@ -48,10 +56,60 @@ function validateAddress(raw: unknown): ShippingAddress {
   const building = str(a.building);
   if (building) addr.building = building;
   // building 以外は必須。
-  if (!addr.name || !addr.postalCode || !addr.prefecture || !addr.address || !addr.phone) {
+  if (!addr.name || !addr.nameKana || !addr.postalCode || !addr.prefecture || !addr.address || !addr.phone) {
+    throw new ReceiveError(400, "invalid_address");
+  }
+  // 氏名カナは全角カナ形式（NEの受注名カナ／発送先カナに必要）。
+  if (!KANA_RE.test(addr.nameKana)) {
     throw new ReceiveError(400, "invalid_address");
   }
   return addr;
+}
+
+// メールアドレスの検証（必須＋形式＋確認一致）。NEの受注メールアドレス（通知宛先）になる。
+function validateEmail(rawEmail: unknown, rawConfirm: unknown): string {
+  const email = typeof rawEmail === "string" ? rawEmail.trim() : "";
+  const confirm = typeof rawConfirm === "string" ? rawConfirm.trim() : "";
+  if (!EMAIL_RE.test(email) || email !== confirm) {
+    throw new ReceiveError(400, "invalid_email");
+  }
+  return email;
+}
+
+// 指定日を UTC の日付のみ（時刻0）にする。JST基準の「今日」を作るのに使う。
+function jstDateOnly(base: Date): Date {
+  const j = new Date(base.getTime() + JST_OFFSET_MS);
+  return new Date(Date.UTC(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate()));
+}
+
+// 配達希望日の検証（任意）。指定があれば「確定日+MIN_DAYS 〜 +MAX_MONTHS」の範囲か検証する。
+// クライアントの日付操作を信用しないため、範囲はサーバ側(JST)でも必ず確認する。
+function validateDeliveryDate(raw: unknown): string {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (!s) return ""; // 未指定（おまかせ）。
+  const mm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!mm) throw new ReceiveError(400, "invalid_delivery_date");
+  const [y, m, d] = [Number(mm[1]), Number(mm[2]), Number(mm[3])];
+  const picked = new Date(Date.UTC(y, m - 1, d));
+  // 存在しない日付（例: 2-31）はロールオーバーで不一致になるので弾く。
+  if (picked.getUTCFullYear() !== y || picked.getUTCMonth() !== m - 1 || picked.getUTCDate() !== d) {
+    throw new ReceiveError(400, "invalid_delivery_date");
+  }
+  const today = jstDateOnly(new Date());
+  const min = new Date(today); min.setUTCDate(min.getUTCDate() + DELIVERY.MIN_DAYS);
+  const max = new Date(today); max.setUTCMonth(max.getUTCMonth() + DELIVERY.MAX_MONTHS);
+  if (picked < min || picked > max) throw new ReceiveError(400, "invalid_delivery_date");
+  return s;
+}
+
+// 配達希望時間帯の検証（任意）。指定があれば許可された5区分のいずれかであること。
+function validateDeliveryTime(raw: unknown): string {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (!s) return ""; // 未指定（おまかせ）。
+  if (!(DELIVERY.TIME_SLOTS as readonly string[]).includes(s)) {
+    throw new ReceiveError(400, "invalid_delivery_time");
+  }
+  return s;
 }
 
 /**
@@ -104,9 +162,14 @@ export const receiveGetCard = onRequest(HTTP_OPTIONS, async (req, res) => {
 
 /**
  * POST /api/receiveConfirm
- *   body: { token, selectedProductId, shippingAddress:{name,postalCode,prefecture,address,building?,phone} }
+ *   body: {
+ *     token, selectedProductId,
+ *     shippingAddress:{name,nameKana,postalCode,prefecture,address,building?,phone},
+ *     email, emailConfirm, deliveryDate?, deliveryTime?
+ *   }
  *   res(200): { ok:true }
- *   res(400): invalid_argument / invalid_address / invalid_product
+ *   res(400): invalid_argument / invalid_address / invalid_email /
+ *             invalid_delivery_date / invalid_delivery_time / invalid_product
  *   res(404): not_found（無効トークン）
  *   res(409): already_used（同時確定・再確定＝二重利用防止）
  *
@@ -123,8 +186,14 @@ export const receiveConfirm = onRequest(HTTP_OPTIONS, async (req, res) => {
   if (!token || !selectedProductId) { res.status(400).json({ ok: false, code: "invalid_argument" }); return; }
 
   let shippingAddress: ShippingAddress;
+  let recipientEmail: string;
+  let deliveryDate: string;
+  let deliveryTime: string;
   try {
     shippingAddress = validateAddress(body.shippingAddress);
+    recipientEmail = validateEmail(body.email, body.emailConfirm);
+    deliveryDate = validateDeliveryDate(body.deliveryDate);
+    deliveryTime = validateDeliveryTime(body.deliveryTime);
   } catch (e) {
     if (e instanceof ReceiveError) { res.status(e.httpStatus).json({ ok: false, code: e.code }); return; }
     throw e;
@@ -150,13 +219,18 @@ export const receiveConfirm = onRequest(HTTP_OPTIONS, async (req, res) => {
       }
 
       // --- 書き込み: 使用済み化＋確定内容の記録。NE投入は第6でのため neStatus は pending（未投入）---
-      tx.update(cardDoc.ref, {
+      // 任意項目（配達希望）は指定があるときだけ書く（undefined を Firestore に書けないため）。
+      const update: Record<string, unknown> = {
         status: CARD_STATUS.USED,
         selectedProductId,
         shippingAddress,
+        recipientEmail,
         usedAt: FieldValue.serverTimestamp(),
         neStatus: NE_STATUS.PENDING,
-      });
+      };
+      if (deliveryDate) update.deliveryDate = deliveryDate;
+      if (deliveryTime) update.deliveryTime = deliveryTime;
+      tx.update(cardDoc.ref, update);
     });
   } catch (err) {
     if (err instanceof ReceiveError) {

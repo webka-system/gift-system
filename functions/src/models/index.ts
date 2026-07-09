@@ -56,6 +56,8 @@ export type SelectableProduct = WithId<SelectableProductData>;
 export interface ShippingAddress {
   /** 氏名。 */
   name: string;
+  /** 氏名カナ（全角カナ。NE の受注名カナ／発送先カナに必須）。 */
+  nameKana: string;
   /** 郵便番号。 */
   postalCode: string;
   /** 都道府県。 */
@@ -90,6 +92,12 @@ export interface GiftCardData {
   selectedProductId?: string;
   /** 配送先住所。 */
   shippingAddress?: ShippingAddress;
+  /** 受け取り者のメールアドレス（NE の受注メールアドレス。NEの受付/発送通知メール宛先 / design.md §7）。 */
+  recipientEmail?: string;
+  /** 配達希望日（任意 / "YYYY-MM-DD"）。確定日+MIN_DAYS〜+MAX_MONTHS の範囲。未指定はおまかせ。 */
+  deliveryDate?: string;
+  /** 配達希望時間帯（任意 / DELIVERY.TIME_SLOTS のいずれか）。未指定はおまかせ。 */
+  deliveryTime?: string;
   /** 使用（確定）日時。 */
   usedAt?: Timestamp;
   /** NE投入状態（未投入 / 投入中 / 投入済 / CSV出力済 など）。 */

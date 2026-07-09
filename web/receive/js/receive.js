@@ -8,6 +8,8 @@
  * 使用済みトークンは「使用済み」表示（二重利用防止）。
  */
 
+import { DELIVERY } from "/shared/constants.js";
+
 const $ = (sel, root = document) => root.querySelector(sel);
 
 /** HTMLエスケープ（商品名・説明の表示時XSS対策）。 */
@@ -15,6 +17,45 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
   ));
+}
+
+// 全角カナ（カタカナブロック＋長音・中黒・全角/半角スペース）。氏名カナの形式チェック用。
+const KANA_RE = /^[゠-ヿ　\s]+$/;
+// 簡易メール形式（前後空白なし・@・ドメインにドット）。
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Date → "YYYY-MM-DD"（ローカル日付）。 */
+function ymd(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** 配達希望日の選択可能範囲（今日基準 / 確定日相当）。min=+MIN_DAYS, max=+MAX_MONTHS。 */
+function deliveryDateBounds() {
+  const min = new Date(); min.setDate(min.getDate() + DELIVERY.MIN_DAYS);
+  const max = new Date(); max.setMonth(max.getMonth() + DELIVERY.MAX_MONTHS);
+  return { min: ymd(min), max: ymd(max) };
+}
+
+/** 配達希望のUI（時間帯セレクト・日付範囲）を定数から組み立てる。 */
+function setupDeliveryControls() {
+  const timeSel = $('select[name="deliveryTime"]');
+  if (timeSel) {
+    for (const slot of DELIVERY.TIME_SLOTS) {
+      const opt = document.createElement("option");
+      opt.value = slot;
+      opt.textContent = slot;
+      timeSel.appendChild(opt);
+    }
+  }
+  const dateInput = $('input[name="deliveryDate"]');
+  if (dateInput) {
+    const { min, max } = deliveryDateBounds();
+    dateInput.min = min;
+    dateInput.max = max;
+  }
 }
 
 /** 表示するビューを1つだけ出す。 */
@@ -36,6 +77,9 @@ function tokenFromUrl() {
 
 const token = tokenFromUrl();
 let selectedProductId = null;
+
+// 配達希望のUI（時間帯・日付範囲）を先に組み立てる。
+setupDeliveryControls();
 
 // 起動: トークンでカードを引く。
 init();
@@ -98,14 +142,45 @@ $("#confirm-form").addEventListener("submit", async (e) => {
   }
 
   const fd = new FormData(e.target);
+  const g = (k) => (fd.get(k) || "").trim();
   const shippingAddress = {
-    name: (fd.get("name") || "").trim(),
-    postalCode: (fd.get("postalCode") || "").trim(),
-    prefecture: (fd.get("prefecture") || "").trim(),
-    address: (fd.get("address") || "").trim(),
-    building: (fd.get("building") || "").trim(),
-    phone: (fd.get("phone") || "").trim(),
+    name: g("name"),
+    nameKana: g("nameKana"),
+    postalCode: g("postalCode"),
+    prefecture: g("prefecture"),
+    address: g("address"),
+    building: g("building"),
+    phone: g("phone"),
   };
+  const email = g("email");
+  const emailConfirm = g("emailConfirm");
+  const deliveryDate = g("deliveryDate");
+  const deliveryTime = g("deliveryTime");
+
+  // --- クライアント側の事前チェック（サーバでも同じ内容を検証する）---
+  const fail = (msg) => { err.textContent = msg; err.hidden = false; };
+  if (!shippingAddress.name || !shippingAddress.postalCode || !shippingAddress.prefecture
+      || !shippingAddress.address || !shippingAddress.phone) {
+    return fail("お届け先の必須項目をご確認ください。");
+  }
+  if (!KANA_RE.test(shippingAddress.nameKana)) {
+    return fail("お名前（カナ）は全角カナで入力してください。");
+  }
+  if (!EMAIL_RE.test(email)) {
+    return fail("メールアドレスの形式をご確認ください。");
+  }
+  if (email !== emailConfirm) {
+    return fail("確認用メールアドレスが一致しません。");
+  }
+  if (deliveryDate) {
+    const { min, max } = deliveryDateBounds();
+    if (deliveryDate < min || deliveryDate > max) {
+      return fail("配達希望日は指定できる範囲外です。選び直してください。");
+    }
+  }
+  if (deliveryTime && !DELIVERY.TIME_SLOTS.includes(deliveryTime)) {
+    return fail("配達希望時間帯の指定が正しくありません。");
+  }
 
   const btn = $("#confirm-btn");
   btn.disabled = true;
@@ -114,7 +189,10 @@ $("#confirm-form").addEventListener("submit", async (e) => {
     const res = await fetch("/api/receiveConfirm", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, selectedProductId, shippingAddress }),
+      body: JSON.stringify({
+        token, selectedProductId, shippingAddress,
+        email, emailConfirm, deliveryDate, deliveryTime,
+      }),
     });
     const data = await res.json().catch(() => ({}));
 
@@ -124,12 +202,15 @@ $("#confirm-form").addEventListener("submit", async (e) => {
     if (res.status === 409) { show("view-used"); return; }
     if (res.status === 404) { show("view-invalid"); return; }
 
-    // それ以外（住所不備・商品不正・通信）は同画面でエラー表示。
-    err.textContent = data.code === "invalid_address"
-      ? "お届け先の入力に不足があります。必須項目をご確認ください。"
-      : data.code === "invalid_product"
-        ? "選択された商品が無効です。お手数ですが選び直してください。"
-        : "送信に失敗しました。時間をおいて再度お試しください。";
+    // それ以外（入力不備・商品不正・通信）は同画面でエラー表示。
+    const byCode = {
+      invalid_address: "お届け先の入力に不足があります。必須項目・カナをご確認ください。",
+      invalid_email: "メールアドレスの形式・確認用の一致をご確認ください。",
+      invalid_delivery_date: "配達希望日は指定できる範囲外です。選び直してください。",
+      invalid_delivery_time: "配達希望時間帯の指定が正しくありません。",
+      invalid_product: "選択された商品が無効です。お手数ですが選び直してください。",
+    };
+    err.textContent = byCode[data.code] || "送信に失敗しました。時間をおいて再度お試しください。";
     err.hidden = false;
   } catch (_) {
     err.textContent = "通信に失敗しました。接続をご確認ください。";

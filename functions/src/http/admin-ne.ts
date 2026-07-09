@@ -11,12 +11,13 @@
 
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
-import { CARD_STATUS, NE_STATUS } from "../config/constants";
+import { CARD_STATUS, NE_STATUS, NE_FIXED } from "../config/constants";
 import { HTTP_OPTIONS } from "./options";
 import { isNeAutoConfigured } from "../config/env";
 import { db, giftCardsRef, giftCardTypesRef, selectableProductsRef } from "../lib/firestore";
 import { GiftCardData } from "../models";
 import { NeCsvRow, buildNeCsvBuffer } from "../ne/csv";
+import { joinAddress } from "../ne/order";
 import { trySubmitCard } from "../ne/submit";
 import { applyCors } from "./cors";
 import { requireAuth } from "./guard";
@@ -68,18 +69,20 @@ export const adminExportNeCsv = onRequest(HTTP_OPTIONS, async (req, res) => {
       const type = typeById.get(data.cardTypeId);
       const a = data.shippingAddress;
       return {
-        token: data.token,
-        cardTypeName: type?.name || data.cardTypeId,
+        slipNo: data.token,
+        orderDate: fmtDate(data.usedAt).slice(0, 10), // 受注日は日付のみ（YYYY-MM-DD）
+        name: a?.name || "",
+        nameKana: a?.nameKana || "",
+        postalCode: a?.postalCode || "",
+        address: a ? joinAddress(a) : "", // 都道府県+市区町村番地+建物を結合
+        phone: a?.phone || "",
+        email: data.recipientEmail || "",
         productName: prod?.name || "",
         neProductCode: prod?.neProductCode || "",
-        quantity: 1,
-        name: a?.name || "",
-        postalCode: a?.postalCode || "",
-        prefecture: a?.prefecture || "",
-        address: a?.address || "",
-        building: a?.building || "",
-        phone: a?.phone || "",
-        usedAt: fmtDate(data.usedAt),
+        quantity: NE_FIXED.QUANTITY,
+        deliveryDate: data.deliveryDate || "",
+        deliveryTime: data.deliveryTime || "",
+        cardTypeName: type?.name || data.cardTypeId,
         memo: data.memo || "",
       };
     });

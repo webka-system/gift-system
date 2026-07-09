@@ -4,7 +4,65 @@
 後で設計書（`docs/design.md`）へ統合できる形でまとめる。仕様の正本は `design.md`、
 本ドキュメントは「いつ・何を・なぜそう解決したか」の履歴を担う。
 
-最終更新: 2026-07-08
+最終更新: 2026-07-09
+
+---
+
+## 0. 2026-07-09：NE必須項目に合わせた受け取り者フォーム完成 ✅（未デプロイ）
+
+NE連携の本格稼働前に、**受け取り者フォームをNEの受注CSV必須項目に合わせて完成**させた
+（使用済みカードには後から項目を足せないため、稼働前に確定させる必要があった）。
+
+### 確定した設計判断
+- **NE受注者＝受け取り者本人**。NEの受注者ブロックと発送先ブロックの両方を受け取り者情報で埋める。
+- **商品価格＝0円**（購入時に支払い済みのギフト。NEは発送のみ担当）。
+- **店舗伝票番号＝token** を流用（新フィールド不要）。
+- **支払方法＝「ポイント全額払い」**（NE区分表記との最終一致は連携本体で確認）。**発送方法は未確定**＝
+  定数を空にして TODO(NE) で差し替え可能に。
+
+### フォームに追加した項目（今回で完成）
+- 氏名カナ（`nameKana` / 全角カナ・必須）
+- メールアドレス（`email` / 必須）＋確認再入力（`emailConfirm` / 一致チェック）
+- 配達希望日（`deliveryDate` / 任意 / 確定日+14日〜+2か月以内）
+- 配達希望時間帯（`deliveryTime` / 任意 / 午前中・14-16・16-18・18-20・19-21 の5区分）
+- 熨斗は実装しない（不要と確定）。
+
+### 実装（変更ファイル）
+- `shared/constants.js`：`NE_FIXED`（paymentMethod / shippingMethod=TODO / productPrice=0 / quantity=1）、
+  `DELIVERY`（MIN_DAYS=14 / MAX_MONTHS=2 / TIME_SLOTS）を追加。フォーム・検証・NEマッピングで共有。
+- `functions/src/models/index.ts`：`ShippingAddress.nameKana` 追加。`GiftCardData` に
+  `recipientEmail` / `deliveryDate` / `deliveryTime` 追加（案A：最小変更）。
+- `web/receive/index.html` + `receive.js`：カナ・メール（+確認）・配達希望日/時間帯の入力を追加。
+  日付の min/max と時間帯選択肢は `DELIVERY` 定数から生成。クライアント側でも形式・一致・範囲を検証。
+- `functions/src/http/receive.ts`：`validateAddress` にカナ必須＋全角カナ形式。`receiveConfirm` に
+  メール（形式＋確認一致）／配達希望日（JST基準で範囲検証）／時間帯（5区分）検証を追加し、
+  `recipientEmail`・（指定時のみ）`deliveryDate`/`deliveryTime` を保存。二重確定防止TXは維持。
+  エラーコード：`invalid_email` / `invalid_delivery_date` / `invalid_delivery_time`（既存 invalid_address 拡張）。
+- `functions/src/ne/order.ts`：NE_FIELD / buildOrderParams を§2の全項目に作り直し。受注者＝発送先の
+  両ブロックを受け取り者情報で充填、住所結合（`joinAddress`）、固定値差し込み、時間帯変換
+  （`NE_DELIVERY_TIME_MAP`：現状は同値・TODO(NE)）。フィールド名は全てTODO(NE)の暫定。
+- `functions/src/ne/csv.ts`：`NeCsvRow` / `NE_CSV_COLUMNS` を§2の全列に作り直し（店舗伝票番号〜受注数量＋
+  参考のカード種別・memo）。支払/発送/価格は NE_FIXED、時間帯は neDeliveryTime で変換。Shift-JISは維持。
+- `functions/src/http/admin-ne.ts` / `ne/submit.ts`：新スキーマに合わせ CSV行・NE投入inputの組み立てを更新。
+- `web/admin/js/admin.js`：詳細ビューに 氏名カナ・メール・配達希望日・時間帯の表示行を追加（表示のみ）。
+
+### NE実接続について
+実接続（トークン取得・実送信）はNE審査通過後。今回は**列構成・データ整形まで**を整え、実送信は
+既存スタブ／pending運用のまま（`isNeAutoConfigured` が false の間はトリガーは何もしない）。
+
+### 検証（エミュレータ end-to-end）
+- functions+firestore エミュレータで `receiveConfirm` を実HTTPで検証（18/18 pass）：
+  正常系（カナ・メール一致・範囲内日付+20日・時間帯）で200＋全項目保存＋neStatus=pending、
+  指定なしで200かつ配達項目は未保存、範囲外日付（+3日/+100日）・不正時間帯・メール不一致/形式不正・
+  カナ不正/未入力がそれぞれ正しいコードで400、弾かれたカードは未使用のまま。
+- `buildOrderParams` のNEマッピング（受注者＝発送先の両ブロック・住所結合・固定値・時間帯）を
+  コンパイル済みlibで検証（12/12 pass）。
+- `functions` の lint / build / 既存ユニットテスト（20 passing。ne-csv は新スキーマへ更新）すべて緑。
+
+### デプロイ（未実施）
+- web＋functions 両方の変更のため **`firebase deploy --only hosting,functions`**。
+  functions predeploy が lint/build を実行。hosting predeploy が `shared/constants.js` を web/shared へコピー。
+- 新規HTTP関数の追加は無いため Cloud Run の手動public設定は不要。
 
 ---
 

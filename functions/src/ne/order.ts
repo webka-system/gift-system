@@ -14,11 +14,12 @@
  *   - 配達希望日/時間帯は任意（空欄可）。時間帯は NE 区分表記へ変換（NE_DELIVERY_TIME_MAP）。
  *   - 文字コードは CSV 側で Shift_JIS。
  *
- * ★店舗（店舗2）の指定について:
- *   NE では「どの店舗の受注か」は CSV の列では持たせない。受注登録API/一括登録の際に、店舗コード（NE_STORE_CODE=
- *   「2」仮置き）または店舗に紐づく受注一括登録パターンID（NE_UPLOAD_PATTERN_ID）を指定することで店舗が決まる。
- *   どちらで指定するか・パラメータ名は使用する NE API 仕様に依存するため、両方の枠を用意し実接続時に確定する。
- *   - API送信時: NE_FIELD.storeCode / NE_FIELD.uploadPatternId（要NE確認）で渡す。
+ * ★店舗（店舗2）の指定について（NEリファレンス調査で確定）:
+ *   受注の投入は受注伝票アップロードAPI /api_v1_receiveorder_base/upload。どの店舗の受注かは **CSVの列では
+ *   指定せず**、パラメータ **receive_order_upload_pattern_id（受注一括登録パターンID＝NE_UPLOAD_PATTERN_ID）**
+ *   で決まる。したがってアップロードに渡すのはパターンID（NE_FIELD.uploadPatternId）だけでよい。
+ *   店舗コード receive_order_shop_id（=2）はアップロードには直接使わず、パターンID特定時の照合キー
+ *   （info API の receive_order_upload_pattern_shop_id と突合）に使う。→ 詳細は ne/upload-pattern.ts。
  *   - CSV: 列は持たせない。NE 取り込み時に「店舗2の受注一括登録パターン」を選ぶ運用。
  *
  * ★店舗伝票番号（token）の一意性について:
@@ -29,7 +30,7 @@
 
 import { ShippingAddress } from "../models";
 import { NE_FIXED, DELIVERY } from "../config/constants";
-import { NE_STORE_CODE, NE_UPLOAD_PATTERN_ID } from "../config/env";
+import { NE_UPLOAD_PATTERN_ID } from "../config/env";
 
 /**
  * 店舗伝票番号の接頭辞（既定は空＝token そのまま）。
@@ -88,10 +89,9 @@ export function joinAddress(a: ShippingAddress): string {
  * ★ 右辺（NE側フィールド名）は暫定。NE API 仕様書で確定したら**ここだけ**直す。
  */
 export const NE_FIELD = {
-  // 取り込み先店舗の指定（＝店舗2）。CSVには持たせず、API送信時にこれで店舗が決まる。
-  // 店舗コード指定か／受注一括登録パターンID指定かは NE API 仕様に依存。実接続時に不要な方を外す。
-  storeCode: "shop_id",                                // TODO(NE): 店舗コード（店舗ID）。正確なパラメータ名は要確認。
-  uploadPatternId: "receive_order_upload_pattern_id",  // TODO(NE): 受注一括登録パターンID。正確なパラメータ名は要確認。
+  // 店舗2として登録するための指定。アップロードAPIはこのパターンIDで店舗が決まる（CSVには持たせない）。
+  // ★値は決め打ちしない。info API で receive_order_upload_pattern_shop_id=NE_STORE_CODE を照合して特定して設定する。
+  uploadPatternId: "receive_order_upload_pattern_id",  // 受注一括登録パターンID（アップロードAPIのパラメータ）
   // 受注ヘッダ
   slipNo: "receiveorder_id_shop",                      // TODO(NE): 店舗伝票番号
   orderDate: "receiveorder_date",                      // TODO(NE): 受注日
@@ -129,9 +129,8 @@ export function buildOrderParams(input: NeOrderInput): Record<string, string | n
   const a = input.address;
   const addr = joinAddress(a);
   return {
-    // 店舗2として登録するための店舗指定（API送信時に付与）。店舗コード or パターンIDのどちらを NE が使うかは
-    // 実接続時に確定（不要な方は外す）。実接続前は storeCode="2"（仮）・uploadPatternId=""（未設定）。
-    [NE_FIELD.storeCode]: NE_STORE_CODE,
+    // 店舗2として登録するための受注一括登録パターンID（アップロードで店舗が決まる）。空＝実接続前。
+    // 実接続時は resolveUploadPatternId(NE_STORE_CODE) で特定した値を NE_UPLOAD_PATTERN_ID に設定する。
     [NE_FIELD.uploadPatternId]: NE_UPLOAD_PATTERN_ID,
     [NE_FIELD.slipNo]: buildSlipNo(input.token),
     [NE_FIELD.orderDate]: input.orderDate,

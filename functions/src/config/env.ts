@@ -9,26 +9,33 @@
 import { NE_MODE } from "./constants";
 
 /**
- * 取り込み先店舗（＝「店舗2」）の識別子プレースホルダ。
+ * 取り込み先店舗（＝「店舗2」）の識別子。NEリファレンス調査で確定した内容（実接続は審査後）。
  *
  * 運用要件: gift-system 由来（カタログギフト）の受注を、NE 上では **「店舗2」の受注**として登録したい
  * （月次集計が店舗単位のため、カタログギフト商品は店舗2として集計する必要がある）。
- * 対象店舗は NE 管理画面上で「**2:九州お取り寄せ本舗(makeshop)(ネクストエンジンカート)**」と表示されており、
- * 先頭の「2」が店舗コード（店舗ID）と思われる。
+ * 対象店舗は NE 管理画面上で「**2:九州お取り寄せ本舗(makeshop)(ネクストエンジンカート)**」と表示。
  *
- * NE の重要な前提: **どの店舗の受注かは CSV の列では指定しない。** 受注登録API/受注一括登録の際に、
- * 店舗（店舗コード、または店舗に紐づく受注一括登録パターンID）を指定することで店舗が決まる。
- *   - 店舗コードで直接指定するのか、店舗2に紐づく受注一括登録パターンIDで指定するのかは、使用する NE API の
- *     仕様に依存する（審査後の実接続時に developer.next-engine.com のAPIドキュメントで確定）。
- *   - CSV 取り込み: CSV自体には店舗列を持たせない。取り込み時に NE 側で「店舗2の受注一括登録パターン」を選ぶ運用。
+ * ★調査で確定したこと:
+ *   - 受注の投入は **受注伝票アップロードAPI /api_v1_receiveorder_base/upload**。
+ *     どの店舗の受注かは **CSVの列では指定せず**、パラメータ **receive_order_upload_pattern_id
+ *     （受注一括登録パターンID）** で決まる（＝この設計は正しかった）。
  *
- * ★TODO(NE): 正確な指定方法（店舗コード指定 or パターンID指定・パラメータ名）は実接続時に確定する。
- *   今は両方の枠をプレースホルダで用意しておき、後から差し込む（環境変数でも上書き可）。
+ * ★紛らわしい3つの番号を区別すること（混同するとエラー）:
+ *   (a) 店舗コード receive_order_shop_id … 「2:九州お取り寄せ本舗」の「2」はこれ（店舗そのものの番号）。
+ *   (b) 受注一括登録パターンID receive_order_upload_pattern_id … **アップロードAPIに渡すのはこれ**。(a)とは別番号。
+ *   (c) フォーマットパターンID … さらに別物（汎用標準パターン=90 等）。(b)と混同しないこと。
+ *
+ * ★重要: 店舗コード「2」をそのまま receive_order_upload_pattern_id に入れて動く保証はない（NE公式回答）。
+ *   パターンIDは **受注一括登録パターン情報取得API /api_v1_receiveorder_uploadpattern/info** を叩き、
+ *   レスポンスから **receive_order_upload_pattern_shop_id = 2（=NE_STORE_CODE）** のパターンを照合して
+ *   動的に特定するのが正（固定値の決め打ちは非推奨）。→ ne/upload-pattern.ts にスタブを用意。
  */
-// 店舗コード（店舗ID）。表示名「2:九州お取り寄せ本舗(makeshop)」から仮置き。実接続時に確定。
+// (a) 店舗コード receive_order_shop_id。「2:九州お取り寄せ本舗」の「2」。パターンIDの照合キーに使う（下記参照）。
 export const NE_STORE_CODE = process.env.NE_STORE_CODE || "2";
-// 受注一括登録パターンID（店舗2のパターン）。★NE管理画面 /api_v1_receiveorder_uploadpattern/info で確認して差し込む。
-export const NE_UPLOAD_PATTERN_ID = process.env.NE_UPLOAD_PATTERN_ID || ""; // 例: "" → 店舗2のパターンIDに差し替え
+// (b) アップロードAPIに渡す受注一括登録パターンID。**store code(2)とは別番号**。
+//   ★実値は info API で receive_order_upload_pattern_shop_id=NE_STORE_CODE のパターンを照合して特定して設定する
+//     （ne/upload-pattern.ts の resolveUploadPatternId）。決め打ちしない。未設定（空）＝実接続前。
+export const NE_UPLOAD_PATTERN_ID = process.env.NE_UPLOAD_PATTERN_ID || "";
 
 export interface NeConfig {
   /** 投入モード（auto: Cloud Functions から NE API / csv: CSV出力で手動・日次取込）。既定は安全側の csv。 */
@@ -39,9 +46,9 @@ export interface NeConfig {
   apiBase: string;
   /** 受注登録APIのパス。★NE APIリファレンスで確定するまで空（未設定＝自動投入は無効）。 */
   orderEndpoint: string;
-  /** 取り込み先店舗コード（＝店舗2 / 表示「2:九州お取り寄せ本舗(makeshop)」）。仮置き "2"。 */
+  /** 店舗コード receive_order_shop_id（＝店舗2 の「2」）。パターンID特定時の照合キー。アップロードには直接使わない。 */
   storeCode: string;
-  /** 受注一括登録パターンID（店舗2のパターン）。店舗コード指定でない場合はこちらで店舗が決まる。未設定＝実接続前。 */
+  /** アップロードAPIに渡す受注一括登録パターンID（store codeとは別番号）。未設定＝実接続前。 */
   uploadPatternId: string;
 }
 
@@ -70,13 +77,12 @@ export function publicHostingOrigin(): string {
 
 /**
  * 自動投入が有効か（fail-safe の既定は無効）。
- * mode=auto かつ client_id/secret・受注登録エンドポイント・**取り込み先店舗の識別子**（店舗コード or
- * 受注一括登録パターンID のいずれか）が揃っているときだけ true。揃うまで（＝マッピング/店舗指定の確定前）は
- * false → Firestoreトリガーは何もせず pending のまま、CSV 側で拾える状態を保つ。
- * ※ 店舗識別子を条件に含めることで、店舗指定が無いまま誤って別店舗に登録する事故を防ぐ。
+ * mode=auto かつ client_id/secret・受注登録エンドポイント・**受注一括登録パターンID（uploadPatternId）**が
+ * 揃っているときだけ true。アップロードで店舗を決めるのは receive_order_upload_pattern_id なので、これが未設定の
+ * まま投入しない（別店舗への誤登録防止）。揃うまでは false → トリガーは何もせず pending、CSV 側で拾える状態を保つ。
+ * ※ storeCode(=2) は既定で入っているが、それだけでは投入しない。パターンIDの確定（info API で照合）が必須。
  */
 export function isNeAutoConfigured(): boolean {
   const c = neConfig();
-  return c.mode === NE_MODE.AUTO && !!c.clientId && !!c.clientSecret && !!c.orderEndpoint
-    && (!!c.storeCode || !!c.uploadPatternId);
+  return c.mode === NE_MODE.AUTO && !!c.clientId && !!c.clientSecret && !!c.orderEndpoint && !!c.uploadPatternId;
 }

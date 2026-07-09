@@ -8,6 +8,11 @@
   <link rel="stylesheet" href="/receive/css/receive.css" />
 </head>
 <body>
+  <!-- 店舗ヘッダー（全画面共通）。受け取り者が店舗を識別できるように。 -->
+  <header class="site-header">
+    <img class="site-header-logo" src="https://file.otoriyose.site/assets/image/header-logo_sp.svg" alt="九州お取り寄せ本舗" />
+  </header>
+
   <main class="app-shell">
 
     <!-- 読み込み中 -->
@@ -100,21 +105,33 @@
       </div>
     </section>
 
-    <!-- 商品詳細ビュー（モーダル / 画像ギャラリー・セット内容・説明） -->
-    <div id="product-modal" class="product-modal" hidden>
-      <div class="product-modal-card" role="dialog" aria-modal="true" aria-labelledby="pm-name">
-        <button id="pm-close" class="pm-close" type="button" aria-label="閉じる">×</button>
-        <div id="pm-gallery" class="pm-gallery"></div>
-        <div class="pm-body">
-          <h2 id="pm-name" class="pm-name"></h2>
-          <div id="pm-set" class="pm-set"></div>
-          <p id="pm-desc" class="pm-desc"></p>
-        </div>
-        <button id="pm-select" type="button" class="primary">この商品を選ぶ</button>
-      </div>
-    </div>
-
   </main>
+
+  <!-- 店舗フッター（全画面共通）。濃紺背景＋白ロゴ＋コピーライト。 -->
+  <footer class="site-footer">
+    <img class="site-footer-logo" src="https://file.otoriyose.site/assets/image/footer-logo_sp.svg" alt="九州お取り寄せ本舗" />
+    <p class="site-copyright">© KYUSHU OTORIYOSE HONPO All Rights Reserved.</p>
+    <!-- 法的表記リンクは後日ここに追加する（プライバシーポリシー・特商法 等）:
+    <nav class="site-legal">
+      <a href="#">プライバシーポリシー</a>
+      <a href="#">特定商取引法に基づく表記</a>
+    </nav>
+    -->
+  </footer>
+
+  <!-- 商品詳細ビュー（モーダル / 画像ギャラリー・セット内容・説明。全画面を覆う fixed オーバーレイ） -->
+  <div id="product-modal" class="product-modal" hidden>
+    <div class="product-modal-card" role="dialog" aria-modal="true" aria-labelledby="pm-name">
+      <button id="pm-close" class="pm-close" type="button" aria-label="閉じる">×</button>
+      <div id="pm-gallery" class="pm-gallery"></div>
+      <div class="pm-body">
+        <h2 id="pm-name" class="pm-name"></h2>
+        <div id="pm-set" class="pm-set"></div>
+        <p id="pm-desc" class="pm-desc"></p>
+      </div>
+      <button id="pm-select" type="button" class="primary">この商品を選ぶ</button>
+    </div>
+  </div>
 
   <script type="module" src="/receive/js/receive.js"></script>
 </body>

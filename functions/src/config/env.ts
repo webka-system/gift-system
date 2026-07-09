@@ -33,11 +33,13 @@ import { NE_MODE } from "./constants";
 // (a) 店舗コード receive_order_shop_id。「2:九州お取り寄せ本舗」の「2」。パターンIDの照合キーに使う（下記参照）。
 export const NE_STORE_CODE = process.env.NE_STORE_CODE || "2";
 // (b) アップロードAPIに渡す受注一括登録パターンID。**store code(2)とは別番号**。
-//   ★実値は info API で receive_order_upload_pattern_shop_id=NE_STORE_CODE のパターンを照合して特定して設定する
-//     （ne/upload-pattern.ts の resolveUploadPatternId）。決め打ちしない。未設定（空）＝実接続前。
-//   ★GAS実測で判明した想定値: **店舗2(makeshop)のパターンID = 4**（resolveUploadPatternId("2") が返すべき値・検算用。
-//     ne/upload-pattern.ts の NE_KNOWN_PATTERN_ID_SHOP2）。ただし実測時点で当該パターンは deleted_flag=無効だったため、
-//     実接続でアップロードが弾かれたら NE 管理画面で店舗2のパターンを有効化すること（下記 upload-pattern.ts 参照）。
+//   ★実値は info API で店舗2の gift 用パターンを照合して特定して設定する（ne/upload-pattern.ts の
+//     resolveUploadPatternId("2", deps, { nameContains: "ギフトカード" })）。決め打ちしない。未設定（空）＝実接続前。
+//   ★想定値: **店舗2のギフトカード用パターンID = 11**（gift用に新規作成・フォーマット90/汎用。resolveUploadPatternId が
+//     返すべき値・検算用。ne/upload-pattern.ts の NE_KNOWN_PATTERN_ID_SHOP2）。
+//     ※ 店舗2にはもう1つ makeshop実受注用パターン4（フォーマット100035）があるが、これは gift 用ではない。
+//   ★パターン11は現在 deleted_flag=無効。**実接続前に NE 管理画面で店舗2のパターン11（ギフトカード）を有効化**すること
+//     （無効/存在しないIDでアップロードすると「存在しない受注一括登録パターン」エラーで弾かれる）。
 export const NE_UPLOAD_PATTERN_ID = process.env.NE_UPLOAD_PATTERN_ID || "";
 
 export interface NeConfig {

@@ -70,10 +70,33 @@ h2 { font-size: 1.05rem; margin: 1.75rem 0 .75rem; }
 /* 住所フォーム */
 .address-form { display: flex; flex-direction: column; gap: .75rem; }
 .address-form label { display: flex; flex-direction: column; gap: .3rem; font-size: .9rem; }
-.address-form input {
-  padding: .65rem .7rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: #fff;
+/* input / select / date をすべて同じ見た目・高さに揃える（時間帯selectの枠が小さくなる問題の解消）。 */
+.address-form input,
+.address-form select {
+  width: 100%;
+  padding: .65rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  line-height: 1.4;
+  background: #fff;
+  color: var(--fg);
 }
-.address-form input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+/* select はネイティブ装飾をリセットし、右側に控えめな矢印を描く（高さ・余白をinputと統一）。 */
+.address-form select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%236b7280' d='M1 1l5 5 5-5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right .8rem center;
+  padding-right: 2rem;
+}
+/* iOS等でdate入力が縦につぶれないよう最小高さを確保（他項目と揃える）。 */
+.address-form input[type="date"] { min-height: 2.9rem; }
+.address-form input:focus,
+.address-form select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+/* 郵便番号→住所 自動入力の状態メッセージ。 */
+.field-note { color: var(--muted); font-size: .8rem; min-height: 1em; }
 
 button.primary {
   width: 100%; margin-top: 1.25rem; padding: .85rem;

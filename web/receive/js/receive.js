@@ -8,7 +8,7 @@
  * 使用済みトークンは「使用済み」表示（二重利用防止）。
  */
 
-import { DELIVERY } from "/shared/constants.js";
+import { DELIVERY, PREFECTURES } from "/shared/constants.js";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -58,6 +58,50 @@ function setupDeliveryControls() {
   }
 }
 
+/** 都道府県プルダウンを47都道府県で埋める（先頭の「選択してください」は残す）。 */
+function setupPrefectures() {
+  const sel = $('select[name="prefecture"]');
+  if (!sel) return;
+  for (const pref of PREFECTURES) {
+    const opt = document.createElement("option");
+    opt.value = pref;
+    opt.textContent = pref;
+    sel.appendChild(opt);
+  }
+}
+
+/**
+ * 郵便番号→住所の自動入力（zipcloud 郵便番号検索API / CORS許可・クライアント直fetch）。
+ * 7桁そろったら検索し、都道府県プルダウンと住所欄（市区町村＋町域）を補助的に埋める。
+ * 補完後もユーザーが手で修正できる（固定はしない）。ハイフンや全角は許容して数字だけ見る。
+ */
+async function lookupPostalCode() {
+  const zipInput = $('input[name="postalCode"]');
+  const status = $("#zip-status");
+  if (!zipInput) return;
+  const digits = (zipInput.value || "").replace(/[^0-9]/g, "");
+  if (digits.length !== 7) return; // 7桁そろうまで何もしない。
+  if (status) status.textContent = "住所を検索中…";
+  try {
+    const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${digits}`);
+    const data = await res.json().catch(() => ({}));
+    const hit = Array.isArray(data.results) ? data.results[0] : null;
+    if (!hit) {
+      if (status) status.textContent = "該当する住所が見つかりませんでした。手入力してください。";
+      return;
+    }
+    // 都道府県プルダウン（address1 は PREFECTURES と一致）。
+    const prefSel = $('select[name="prefecture"]');
+    if (prefSel && hit.address1) prefSel.value = hit.address1;
+    // 住所欄は市区町村＋町域を補完（番地・建物は利用者が続けて入力）。
+    const addrInput = $('input[name="address"]');
+    if (addrInput) addrInput.value = `${hit.address2 || ""}${hit.address3 || ""}`;
+    if (status) status.textContent = "住所を自動入力しました。番地・建物名を続けてご入力ください。";
+  } catch (_) {
+    if (status) status.textContent = "住所の自動入力に失敗しました。手入力してください。";
+  }
+}
+
 /** 表示するビューを1つだけ出す。 */
 function show(id) {
   for (const v of document.querySelectorAll(".view")) v.hidden = v.id !== id;
@@ -78,8 +122,16 @@ function tokenFromUrl() {
 const token = tokenFromUrl();
 let selectedProductId = null;
 
-// 配達希望のUI（時間帯・日付範囲）を先に組み立てる。
+// フォームの補助UI（都道府県プルダウン・配達希望）を先に組み立てる。
+setupPrefectures();
 setupDeliveryControls();
+
+// 郵便番号が7桁そろったら住所を自動入力（入力途中・確定どちらでも拾う）。
+const zipInput = $('input[name="postalCode"]');
+if (zipInput) {
+  zipInput.addEventListener("input", lookupPostalCode);
+  zipInput.addEventListener("change", lookupPostalCode);
+}
 
 // 起動: トークンでカードを引く。
 init();
@@ -153,7 +205,6 @@ $("#confirm-form").addEventListener("submit", async (e) => {
     phone: g("phone"),
   };
   const email = g("email");
-  const emailConfirm = g("emailConfirm");
   const deliveryDate = g("deliveryDate");
   const deliveryTime = g("deliveryTime");
 
@@ -168,9 +219,6 @@ $("#confirm-form").addEventListener("submit", async (e) => {
   }
   if (!EMAIL_RE.test(email)) {
     return fail("メールアドレスの形式をご確認ください。");
-  }
-  if (email !== emailConfirm) {
-    return fail("確認用メールアドレスが一致しません。");
   }
   if (deliveryDate) {
     const { min, max } = deliveryDateBounds();
@@ -191,7 +239,7 @@ $("#confirm-form").addEventListener("submit", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         token, selectedProductId, shippingAddress,
-        email, emailConfirm, deliveryDate, deliveryTime,
+        email, deliveryDate, deliveryTime,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -205,7 +253,7 @@ $("#confirm-form").addEventListener("submit", async (e) => {
     // それ以外（入力不備・商品不正・通信）は同画面でエラー表示。
     const byCode = {
       invalid_address: "お届け先の入力に不足があります。必須項目・カナをご確認ください。",
-      invalid_email: "メールアドレスの形式・確認用の一致をご確認ください。",
+      invalid_email: "メールアドレスの形式をご確認ください。",
       invalid_delivery_date: "配達希望日は指定できる範囲外です。選び直してください。",
       invalid_delivery_time: "配達希望時間帯の指定が正しくありません。",
       invalid_product: "選択された商品が無効です。お手数ですが選び直してください。",

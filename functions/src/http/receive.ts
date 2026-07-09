@@ -66,11 +66,11 @@ function validateAddress(raw: unknown): ShippingAddress {
   return addr;
 }
 
-// メールアドレスの検証（必須＋形式＋確認一致）。NEの受注メールアドレス（通知宛先）になる。
-function validateEmail(rawEmail: unknown, rawConfirm: unknown): string {
+// メールアドレスの検証（必須＋形式）。NEの受注メールアドレス（通知宛先）になる。
+// 確認用の再入力欄は廃止したため、形式チェックのみ（1入力）。
+function validateEmail(rawEmail: unknown): string {
   const email = typeof rawEmail === "string" ? rawEmail.trim() : "";
-  const confirm = typeof rawConfirm === "string" ? rawConfirm.trim() : "";
-  if (!EMAIL_RE.test(email) || email !== confirm) {
+  if (!EMAIL_RE.test(email)) {
     throw new ReceiveError(400, "invalid_email");
   }
   return email;
@@ -165,7 +165,7 @@ export const receiveGetCard = onRequest(HTTP_OPTIONS, async (req, res) => {
  *   body: {
  *     token, selectedProductId,
  *     shippingAddress:{name,nameKana,postalCode,prefecture,address,building?,phone},
- *     email, emailConfirm, deliveryDate?, deliveryTime?
+ *     email, deliveryDate?, deliveryTime?
  *   }
  *   res(200): { ok:true }
  *   res(400): invalid_argument / invalid_address / invalid_email /
@@ -191,7 +191,7 @@ export const receiveConfirm = onRequest(HTTP_OPTIONS, async (req, res) => {
   let deliveryTime: string;
   try {
     shippingAddress = validateAddress(body.shippingAddress);
-    recipientEmail = validateEmail(body.email, body.emailConfirm);
+    recipientEmail = validateEmail(body.email);
     deliveryDate = validateDeliveryDate(body.deliveryDate);
     deliveryTime = validateDeliveryTime(body.deliveryTime);
   } catch (e) {

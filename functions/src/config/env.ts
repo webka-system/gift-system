@@ -94,18 +94,29 @@ export function publicHostingOrigin(): string {
   return raw.replace(/\/+$/, "");
 }
 
+/** 投入経路の設定（エンドポイント・パターンID）が揃っているか。mode に依存しない共通条件。 */
+function neSubmitConfigReady(): boolean {
+  const c = neConfig();
+  // アップロードで店舗を決めるのは receive_order_upload_pattern_id。未設定のまま投入しない（別店舗誤登録防止）。
+  // client_id/secret には依存させない（投入経路は access/refresh のみで動く。認証交換専用のため neCallback にだけ注入）。
+  return !!c.uploadEndpoint && !!c.uploadPatternId;
+}
+
 /**
- * 自動投入が有効か（fail-safe の既定は無効）。
- * mode=auto かつ **アップロードエンドポイント**・**受注一括登録パターンID（uploadPatternId）** が揃っているときだけ true。
- * アップロードで店舗を決めるのは receive_order_upload_pattern_id なので、これが未設定のまま投入しない
- * （別店舗への誤登録防止）。揃うまでは false → トリガーは何もせず pending、CSV 側で拾える状態を保つ。
- *
- * ★ client_id/secret には**依存させない**。投入経路（アップロード/キュー確認）は access_token/refresh_token だけで
- *   動き、client_id/secret は認証交換(/api_neauth)専用で別関数(neCallback)にしか注入されないため。トークンが
- *   未取得なら neApiCall がエラーになり、カードは pending に残る（発送漏れ防止・リトライ可能）。
+ * 手動投入（adminRetryNeSubmissions）が有効か。**mode=auto または manual** かつ投入設定が揃っているとき true。
+ * manual は「自動トリガーは動かさず、管理画面からの手動投入だけ許可」する段階テスト/慎重運用向けモード。
+ * 揃うまでは false（CSV 運用と同じ＝pending のまま）。
+ */
+export function isNeSubmitEnabled(): boolean {
+  const mode = neConfig().mode;
+  return (mode === NE_MODE.AUTO || mode === NE_MODE.MANUAL) && neSubmitConfigReady();
+}
+
+/**
+ * **自動トリガー**（onGiftCardConfirmed による確定時の自動投入）が有効か（fail-safe の既定は無効）。
+ * **mode=auto** かつ投入設定が揃っているときだけ true。manual/csv では false → トリガーは何もせず pending のまま。
  * ※ storeCode(=2) は既定で入っているが、それだけでは投入しない。パターンID(=11)の設定が必須。
  */
 export function isNeAutoConfigured(): boolean {
-  const c = neConfig();
-  return c.mode === NE_MODE.AUTO && !!c.uploadEndpoint && !!c.uploadPatternId;
+  return neConfig().mode === NE_MODE.AUTO && neSubmitConfigReady();
 }

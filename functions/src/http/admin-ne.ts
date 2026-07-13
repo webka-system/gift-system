@@ -16,7 +16,7 @@ import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 import { CARD_STATUS, NE_STATUS } from "../config/constants";
 import { HTTP_OPTIONS } from "./options";
-import { isNeAutoConfigured } from "../config/env";
+import { isNeSubmitEnabled } from "../config/env";
 import { db, giftCardsRef, selectableProductsRef } from "../lib/firestore";
 import { GiftCardData } from "../models";
 import { buildNeCsvBuffer } from "../ne/csv";
@@ -110,7 +110,8 @@ export const adminRetryNeSubmissions = onRequest(HTTP_OPTIONS, async (req, res) 
   const admin = await requireAuth(req, res);
   if (!admin) return;
 
-  if (!isNeAutoConfigured()) {
+  // 手動投入は auto / manual のどちらでも許可（manual＝自動トリガーは動かさず手動投入だけ）。
+  if (!isNeSubmitEnabled()) {
     res.status(200).json({ ok: true, configured: false, submitted: 0, queued: 0, failed: 0, waiting: 0, skipped: 0 });
     return;
   }

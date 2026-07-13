@@ -33,9 +33,12 @@ NE登録成功が確認済みの形式をそのまま流用＝フォーマット
 - `functions/src/config/secrets.ts`(新)：`defineSecret("NE_CLIENT_ID")`/`NE_CLIENT_SECRET`（Secret Manager）。
   **neCallback にのみ注入**（認証交換専用。投入経路には注入せず露出面を最小化）。
 - `functions/src/config/env.ts`：`authEndpoint`/`uploadEndpoint`/`queEndpoint`/`waitFlag` を追加（既定値あり）。
-  `isNeAutoConfigured` を **mode=auto かつ uploadEndpoint・uploadPatternId が揃うこと**に変更（client_id/secret には
-  依存させない＝投入経路に不要。トークン未取得なら neApiCall がエラー→pending 残置）。storeCode/uploadPatternId を
+  投入ゲートを2分割：**`isNeAutoConfigured`（自動トリガー用＝mode=auto）** と **`isNeSubmitEnabled`（手動投入用＝
+  mode=auto または manual）**。いずれも uploadEndpoint・uploadPatternId が揃うことが条件で、client_id/secret には
+  依存させない（投入経路に不要。トークン未取得なら neApiCall がエラー→pending 残置）。storeCode/uploadPatternId を
   呼び出し時に process.env から読むよう統一。
+- `shared/constants.js`：`NE_MODE.MANUAL`（自動トリガーは動かさず手動投入(adminRetry)だけ許可）を追加。段階テストで
+  1件だけ隔離して投入するためのモード。**csv → manual(1件テスト) → auto** の順で慎重に上げる。
 - `functions/src/ne/client.ts`：**通常v1 APIは access/refresh のみ**（client_id/secret を送らない）に整理。
   認証交換 `neAuthExchange(uid,state)`（/api_neauth）を追加。バイナリ（Shift-JIS CSV）を1フィールドに載せる
   `neApiUpload(...)`＋`percentEncodeBytes(buf)`（1バイトずつ %XX。URLSearchParams だと UTF-8 再エンコードで
@@ -82,13 +85,14 @@ NE登録成功が確認済みの形式をそのまま流用＝フォーマット
 ### 段階テスト手順（いきなり全件自動投入しない）
 1. **フェーズ1（認証のみ）**：デプロイ後、NEのOAuthフローを1回通す（prod Redirect URI=neCallback）。
    `neAuth/tokens` に access/refresh が保存され、コールバック画面が「認証が完了し…」を表示すればOK。まだ投入しない。
-2. **フェーズ2（読取り疎通・任意）**：`NE_MODE=auto`＋`NE_UPLOAD_PATTERN_ID=11` を設定して functions を再デプロイ。
-   ※この時点ではトリガーが動くので、テスト対象カード以外に pending が無い状態で進めると安全。
-3. **フェーズ3（1件だけ投入）**：確定済み（used/pending）カードを1枚用意し、管理者トークンで
-   `POST /api/adminRetryNeSubmissions?cardId=<id>` を叩く → `{queued:1}`。もう一度叩く → `{submitted:1}`（キュー成功時）。
-   NE店舗2で受注が立つか、支払方法「ポイント全額払い」・発送方法「宅急便」・時間帯指定などの区分を**目視確認**。
-   失敗時は pending に戻り `neLastError` に理由が入る（区分表記の要修正等を確認して差し替え）。
-4. **フェーズ4（自動投入ON）**：問題なければ以後は確定の瞬間に `onGiftCardConfirmed` が自動で queued 化。
+2. **フェーズ3（1件だけ隔離投入）**：`NE_MODE=manual`＋`NE_UPLOAD_PATTERN_ID=11` を設定して functions を再デプロイ。
+   **manual は自動トリガーを動かさない**ので、新規確定が来ても勝手に投入されず、手動の1件テストを完全に隔離できる。
+   確定済み（used/pending）カードを1枚選び、管理者トークンで `POST /api/adminRetryNeSubmissions?cardId=<id>` を叩く
+   → `{queued:1}`。もう一度叩く → `{submitted:1}`（キュー成功時）。NE店舗2で受注が立つか、支払方法「ポイント全額払い」・
+   発送方法「宅急便」・時間帯指定などの区分を**目視確認**。失敗時は pending に戻り `neLastError` に理由が入る
+   （区分表記の要修正等を確認して差し替え）。
+3. **フェーズ4（自動投入ON）**：問題なければ `NE_MODE=auto` に上げて再デプロイ。以後は確定の瞬間に
+   `onGiftCardConfirmed` が自動で queued 化。
    queued→submitted の確定は当面 `adminRetryNeSubmissions`（cardId/limit なしで全件前進）で運用。
    **★次段階の宿題**：queued を自動で submitted まで進める **スケジュール関数（onSchedule）** を追加すれば完全自動化
    （Cloud Scheduler。HTTP関数ではないので手動public設定は不要）。段階テストが済むまでは追加しない。

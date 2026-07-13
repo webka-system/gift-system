@@ -42,8 +42,9 @@ export const NE_STATUS = {
 
 // ===== NE 連携方式（design.md 第6章。自動・CSV の両対応）=====
 export const NE_MODE = {
-  AUTO: "auto", // Cloud Function から NE 受注登録 API を呼ぶ
-  CSV: "csv",   // 確定済み受注を CSV 出力し手動/日次で取込
+  AUTO: "auto",     // 確定の瞬間にトリガーが自動投入＋管理画面の手動投入(adminRetry)も可。
+  MANUAL: "manual", // 自動トリガーは動かさず、管理画面の手動投入(adminRetry)だけ可。段階テスト/慎重運用用。
+  CSV: "csv",       // 確定済み受注を CSV 出力し手動/日次で取込（自動投入なし）。
 };
 
 // ===== 受け取り者トークン =====

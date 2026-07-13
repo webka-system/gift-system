@@ -30,6 +30,7 @@
   "include": [
     "src/**/*",
     "../shared/constants.js",
-    "../shared/expiry.js"
+    "../shared/expiry.js",
+    "../shared/delivery.js"
   ]
 }

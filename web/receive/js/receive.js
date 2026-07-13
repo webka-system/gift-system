@@ -9,6 +9,7 @@
  */
 
 import { DELIVERY, PREFECTURES, EXPIRY_CONTACT } from "/shared/constants.js";
+import { deliveryDateBounds as computeDeliveryBounds, ymdToJp } from "/shared/delivery.js";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -24,22 +25,45 @@ const KANA_RE = /^[゠-ヿ　\s]+$/;
 // 簡易メール形式（前後空白なし・@・ドメインにドット）。
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** Date → "YYYY-MM-DD"（ローカル日付）。 */
-function ymd(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-/** 配達希望日の選択可能範囲（今日基準 / 確定日相当）。min=+MIN_DAYS, max=+MAX_MONTHS。 */
+/** 配達希望日の選択可能範囲（今日基準 / 確定日相当）。純粋ロジックは shared/delivery.js。 */
 function deliveryDateBounds() {
-  const min = new Date(); min.setDate(min.getDate() + DELIVERY.MIN_DAYS);
-  const max = new Date(); max.setMonth(max.getMonth() + DELIVERY.MAX_MONTHS);
-  return { min: ymd(min), max: ymd(max) };
+  return computeDeliveryBounds(Date.now(), DELIVERY.MIN_DAYS, DELIVERY.MAX_MONTHS);
 }
 
-/** 配達希望のUI（時間帯セレクト・日付範囲）を定数から組み立てる。 */
+// 配達希望日が範囲外のときに立てるフラグ（確定ボタンの無効化に使う）。
+let deliveryDateInvalid = false;
+
+/**
+ * 配達希望日の即時検証（iOS Safari で min/max が無視される問題の保険）。
+ * 変更のたびに範囲（確定日+MIN_DAYS 〜 +MAX_MONTHS）を検証し、範囲外ならその場で
+ * 具体的な選択可能期間を示すエラー＋赤枠＋確定ボタン無効化。範囲内/未入力なら案内文に戻す。
+ * サーバ(receiveConfirm)の検証が最終防衛線であることは変えない（これは体験改善のための前段）。
+ */
+function validateDeliveryDate() {
+  const input = $('input[name="deliveryDate"]');
+  const note = $("#delivery-date-note");
+  const btn = $("#confirm-btn");
+  if (!input) return;
+  const { min, max } = deliveryDateBounds();
+  const rangeJp = `${ymdToJp(min)}〜${ymdToJp(max)}`;
+  const v = (input.value || "").trim();
+
+  // 未入力（任意）または範囲内 → 有効。案内文（選択可能期間）を表示。
+  if (!v || (v >= min && v <= max)) {
+    deliveryDateInvalid = false;
+    input.classList.remove("invalid");
+    if (note) { note.className = "field-note"; note.textContent = `📅 ${rangeJp} の間でお選びいただけます`; }
+    if (btn) btn.disabled = false;
+    return;
+  }
+  // 範囲外 → その場でエラー表示＋赤枠＋確定を無効化。
+  deliveryDateInvalid = true;
+  input.classList.add("invalid");
+  if (note) { note.className = "field-note warn"; note.textContent = `配達希望日は ${rangeJp} の間で選択してください。`; }
+  if (btn) btn.disabled = true;
+}
+
+/** 配達希望のUI（時間帯セレクト・日付範囲・選択可能期間の案内・即時検証）を定数から組み立てる。 */
 function setupDeliveryControls() {
   const timeSel = $('select[name="deliveryTime"]');
   if (timeSel) {
@@ -53,8 +77,13 @@ function setupDeliveryControls() {
   const dateInput = $('input[name="deliveryDate"]');
   if (dateInput) {
     const { min, max } = deliveryDateBounds();
-    dateInput.min = min;
+    dateInput.min = min; // PC(Chrome等)ではネイティブに効く。
     dateInput.max = max;
+    // iOS Safari は上記 min/max を無視するため、選択のたびに JS で範囲検証する（保険）。
+    dateInput.addEventListener("change", validateDeliveryDate);
+    dateInput.addEventListener("input", validateDeliveryDate);
+    // 選択可能期間を選ぶ前から常時案内（初期表示）。
+    validateDeliveryDate();
   }
 }
 
@@ -342,8 +371,15 @@ function setupProductModal() {
 }
 
 // 入力を直したら、その欄の赤枠を即解除（フィードバック）。
-$("#confirm-form").addEventListener("input", (e) => { e.target.classList && e.target.classList.remove("invalid"); });
-$("#confirm-form").addEventListener("change", (e) => { e.target.classList && e.target.classList.remove("invalid"); });
+// ただし配達希望日は専用ハンドラ(validateDeliveryDate)が赤枠/確定無効を管理するため、ここでは触らない。
+$("#confirm-form").addEventListener("input", (e) => {
+  if (e.target.name === "deliveryDate") return;
+  e.target.classList && e.target.classList.remove("invalid");
+});
+$("#confirm-form").addEventListener("change", (e) => {
+  if (e.target.name === "deliveryDate") return;
+  e.target.classList && e.target.classList.remove("invalid");
+});
 
 $("#confirm-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -390,7 +426,8 @@ $("#confirm-form").addEventListener("submit", async (e) => {
   if (deliveryDate) {
     const { min, max } = deliveryDateBounds();
     if (deliveryDate < min || deliveryDate > max) {
-      return fail("配達希望日は指定できる範囲外です。選び直してください。", ["deliveryDate"]);
+      validateDeliveryDate(); // 案内文もエラー表示に同期。
+      return fail(`配達希望日は ${ymdToJp(min)}〜${ymdToJp(max)} の間で選択してください。`, ["deliveryDate"]);
     }
   }
   if (deliveryTime && !DELIVERY.TIME_SLOTS.includes(deliveryTime)) {
@@ -433,7 +470,8 @@ $("#confirm-form").addEventListener("submit", async (e) => {
     err.textContent = "通信に失敗しました。接続をご確認ください。";
     err.hidden = false;
   } finally {
-    btn.disabled = false;
+    // 配達希望日が範囲外のままなら確定は無効を維持（誤送信防止）。
+    btn.disabled = deliveryDateInvalid;
     btn.textContent = "この内容で確定する";
   }
 });

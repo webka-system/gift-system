@@ -128,6 +128,31 @@ NE登録成功が確認済みの形式をそのまま流用＝フォーマット
 
 ---
 
+## ★ 2026-07-13 追補：配達希望日の範囲制限を iOS Safari でも効かせる（クライアント即時検証）
+
+**問題**：iPhone(iOS Safari)の `<input type="date">` は **min/max 属性を無視**して全期間選べてしまう（既知のブラウザ挙動）。
+サーバ検証(receiveConfirm)では JST で範囲外を 400 で弾くが、それだと「選べたのに確定でエラー」となり受け取り者体験が悪い。
+→ **クライアントでも選択の瞬間に範囲検証**して、その場でエラー＋確定無効化する保険を追加（サーバ検証は最終防衛線のまま不変）。
+
+- **`shared/delivery.js`（新規・純粋・環境非依存）**：`deliveryDateBounds(nowMs,minDays,maxMonths)` /
+  `isDeliveryDateInRange(...)` / `ymdToJp("YYYY-MM-DD"→"M月D日")`。shared/expiry.js と同じ SSOT 方式。
+  `functions/src/config/delivery.ts` で再エクスポート、`tsconfig.json` include に追加、
+  `firebase.json` の hosting predeploy に web/shared へのコピーを追加。
+- **`web/receive/js/receive.js`**：日付の `change`/`input` で `validateDeliveryDate()` を実行。範囲外なら
+  **具体的な期間を明示したエラー**（「配達希望日は 7月27日〜9月13日 の間で選択してください。」）＋赤枠＋
+  **確定ボタンを無効化**。範囲内/未入力なら**選択可能期間の案内**（「📅 7月27日〜9月13日 の間でお選びいただけます」）を常時表示。
+  min/max 属性は引き続き設定（PC Chrome 等では効くため）。フォーム全体の「入力で赤枠解除」リスナーは日付欄だけ除外
+  （専用ハンドラが状態を管理）。送信時の範囲チェックも具体的な期間を出す文言に更新し、`finally` は範囲外なら確定無効を維持。
+  ローカルの重複ロジック（deliveryDateBounds/ymd）は shared に集約。
+- **`web/receive/index.html`**：日付入力の直下に案内/エラー表示用 `#delivery-date-note`（.field-note）を追加。
+- **検証**：`shared/delivery.js` の単体テスト **10件**（境界±1日・未入力true・遠未来false・M月D日整形）＝functions test 計 **61 passing**。
+  web は node --check 緑＋モジュールの実行スモーク（bounds/inRange/未来false/JP整形）を確認。
+  ★iPhone実機での「範囲外は選んだ瞬間にエラーで確定不可／範囲内は問題なく進める」は要実機確認（自動操作環境なし）。
+- **デプロイ**：**hosting のみ＝`firebase deploy --only hosting`**（受け取り者ページ＋shared配布のみ。functions/新規HTTP関数なし＝
+  Cloud Run 手動public設定は不要）。predeploy が `shared/{constants,expiry,delivery}.js` を web/shared へコピー。反映後スマホは再読込。
+
+---
+
 ## 0. 2026-07-09：NE必須項目に合わせた受け取り者フォーム完成 ✅（未デプロイ）
 
 NE連携の本格稼働前に、**受け取り者フォームをNEの受注CSV必須項目に合わせて完成**させた

@@ -30,7 +30,7 @@
       "**/node_modules/**"
     ],
     "predeploy": [
-      "node -e \"const fs=require('fs');fs.mkdirSync('web/shared',{recursive:true});fs.copyFileSync('shared/constants.js','web/shared/constants.js');fs.copyFileSync('shared/expiry.js','web/shared/expiry.js')\""
+      "node -e \"const fs=require('fs');fs.mkdirSync('web/shared',{recursive:true});fs.copyFileSync('shared/constants.js','web/shared/constants.js');fs.copyFileSync('shared/expiry.js','web/shared/expiry.js');fs.copyFileSync('shared/delivery.js','web/shared/delivery.js')\""
     ],
     "rewrites": [
       { "source": "/api/adminGenerateGiftCards", "function": { "functionId": "adminGenerateGiftCards", "region": "asia-northeast1" } },

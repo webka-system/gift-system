@@ -81,7 +81,10 @@
         <h2><span class="step-no">3</span>配達希望<span class="step-opt">任意</span></h2>
         <p class="muted small">指定がない場合、最短でのお届けとなります。未入力のまま進めていただけます。</p>
         <div class="address-form">
-          <label><span class="fl">配達希望日<span class="opt">任意</span></span><input name="deliveryDate" type="date" /></label>
+          <label><span class="fl">配達希望日<span class="opt">任意</span></span>
+            <input name="deliveryDate" type="date" />
+            <span id="delivery-date-note" class="field-note"></span>
+          </label>
           <label><span class="fl">配達希望時間帯<span class="opt">任意</span></span>
             <select name="deliveryTime">
               <option value="">指定なし</option>

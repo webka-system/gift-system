@@ -45,28 +45,42 @@ export const NE_UPLOAD_PATTERN_ID = process.env.NE_UPLOAD_PATTERN_ID || "";
 export interface NeConfig {
   /** 投入モード（auto: Cloud Functions から NE API / csv: CSV出力で手動・日次取込）。既定は安全側の csv。 */
   mode: string;
+  /** クライアントID（/api_neauth 交換専用。Secret Manager から neCallback にのみ注入）。 */
   clientId: string;
+  /** クライアントシークレット（/api_neauth 交換専用。Secret Manager から neCallback にのみ注入）。 */
   clientSecret: string;
   /** NE APIベースURL（既定 https://api.next-engine.org）。 */
   apiBase: string;
-  /** 受注登録APIのパス。★NE APIリファレンスで確定するまで空（未設定＝自動投入は無効）。 */
-  orderEndpoint: string;
+  /** 認証交換APIのパス（uid+state+client_id+client_secret → access/refresh）。既定 /api_neauth。 */
+  authEndpoint: string;
+  /** 受注伝票アップロードAPIのパス（実証済みCSVを投入）。既定 /api_v1_receiveorder_base/upload。 */
+  uploadEndpoint: string;
+  /** アップロードキュー検索APIのパス（que_id で取込結果を確認）。既定 /api_v1_system_que/search。 */
+  queEndpoint: string;
+  /** アップロードの wait_flag（"1"=メイン機能過負荷でも極力エラーにせず実行）。既定 "1"。 */
+  waitFlag: string;
   /** 店舗コード receive_order_shop_id（＝店舗2 の「2」）。パターンID特定時の照合キー。アップロードには直接使わない。 */
   storeCode: string;
-  /** アップロードAPIに渡す受注一括登録パターンID（store codeとは別番号）。未設定＝実接続前。 */
+  /** アップロードAPIに渡す受注一括登録パターンID（store codeとは別番号・数値=11）。未設定＝実接続前。 */
   uploadPatternId: string;
 }
 
-/** NE 設定を環境変数から読む。未設定は空文字（自動投入は isNeAutoConfigured で弾く）。 */
+/** NE 設定を環境変数から読む。未設定は空文字/既定（自動投入は isNeAutoConfigured で弾く）。 */
 export function neConfig(): NeConfig {
   return {
     mode: process.env.NE_MODE || NE_MODE.CSV,
+    // client_id/secret は Secret Manager から注入された関数でのみ値が入る（neCallback）。
     clientId: process.env.NE_CLIENT_ID || "",
     clientSecret: process.env.NE_CLIENT_SECRET || "",
     apiBase: process.env.NE_API_BASE || "https://api.next-engine.org",
-    orderEndpoint: process.env.NE_ORDER_ENDPOINT || "",
-    storeCode: NE_STORE_CODE,
-    uploadPatternId: NE_UPLOAD_PATTERN_ID,
+    authEndpoint: process.env.NE_AUTH_ENDPOINT || "/api_neauth",
+    uploadEndpoint: process.env.NE_UPLOAD_ENDPOINT || "/api_v1_receiveorder_base/upload",
+    queEndpoint: process.env.NE_QUE_ENDPOINT || "/api_v1_system_que/search",
+    waitFlag: process.env.NE_WAIT_FLAG || "1",
+    // storeCode / uploadPatternId は他フィールドと同様に**呼び出し時**に process.env を読む
+    //  （NE_STORE_CODE / NE_UPLOAD_PATTERN_ID の既定と一致。const は後方互換のため残置）。
+    storeCode: process.env.NE_STORE_CODE || NE_STORE_CODE,
+    uploadPatternId: process.env.NE_UPLOAD_PATTERN_ID || NE_UPLOAD_PATTERN_ID,
   };
 }
 
@@ -82,12 +96,16 @@ export function publicHostingOrigin(): string {
 
 /**
  * 自動投入が有効か（fail-safe の既定は無効）。
- * mode=auto かつ client_id/secret・受注登録エンドポイント・**受注一括登録パターンID（uploadPatternId）**が
- * 揃っているときだけ true。アップロードで店舗を決めるのは receive_order_upload_pattern_id なので、これが未設定の
- * まま投入しない（別店舗への誤登録防止）。揃うまでは false → トリガーは何もせず pending、CSV 側で拾える状態を保つ。
- * ※ storeCode(=2) は既定で入っているが、それだけでは投入しない。パターンIDの確定（info API で照合）が必須。
+ * mode=auto かつ **アップロードエンドポイント**・**受注一括登録パターンID（uploadPatternId）** が揃っているときだけ true。
+ * アップロードで店舗を決めるのは receive_order_upload_pattern_id なので、これが未設定のまま投入しない
+ * （別店舗への誤登録防止）。揃うまでは false → トリガーは何もせず pending、CSV 側で拾える状態を保つ。
+ *
+ * ★ client_id/secret には**依存させない**。投入経路（アップロード/キュー確認）は access_token/refresh_token だけで
+ *   動き、client_id/secret は認証交換(/api_neauth)専用で別関数(neCallback)にしか注入されないため。トークンが
+ *   未取得なら neApiCall がエラーになり、カードは pending に残る（発送漏れ防止・リトライ可能）。
+ * ※ storeCode(=2) は既定で入っているが、それだけでは投入しない。パターンID(=11)の設定が必須。
  */
 export function isNeAutoConfigured(): boolean {
   const c = neConfig();
-  return c.mode === NE_MODE.AUTO && !!c.clientId && !!c.clientSecret && !!c.orderEndpoint && !!c.uploadPatternId;
+  return c.mode === NE_MODE.AUTO && !!c.uploadEndpoint && !!c.uploadPatternId;
 }

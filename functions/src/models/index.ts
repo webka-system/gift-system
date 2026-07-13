@@ -112,9 +112,13 @@ export interface GiftCardData {
   deliveryTime?: string;
   /** 使用（確定）日時。 */
   usedAt?: Timestamp;
-  /** NE投入状態（未投入 / 投入中 / 投入済 / CSV出力済 など）。 */
+  /** NE投入状態（未投入 / 投入中 / 受付済(queued) / 投入済 / CSV出力済 など）。 */
   neStatus?: NeStatus;
-  /** NE自動投入に成功した日時。 */
+  /** 受注伝票アップロードAPIの que_id（非同期キューの取込結果確認に使う。queued 時に保持）。 */
+  neQueId?: string;
+  /** アップロードAPIに受け付けられた日時（queued 化した時刻）。 */
+  neQueuedAt?: Timestamp;
+  /** NE自動投入に成功した日時（キュー取込成功＝submitted になった時刻）。 */
   neSubmittedAt?: Timestamp;
   /** 直近のNE投入失敗の理由（運用調査用。顧客情報は含めない）。 */
   neLastError?: string;

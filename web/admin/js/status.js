@@ -18,6 +18,7 @@ export function neStatusInfo(neStatus) {
     case NE_STATUS.SUBMITTED:    return { label: "NE投入済", kind: "ne-ok" };
     case NE_STATUS.CSV_EXPORTED: return { label: "CSV出力済", kind: "ne-ok" };
     case NE_STATUS.SUBMITTING:   return { label: "NE投入中", kind: "ne-progress" };
+    case NE_STATUS.QUEUED:       return { label: "NE受付済(確認待ち)", kind: "ne-progress" };
     case NE_STATUS.ERROR:        return { label: "NE投入失敗", kind: "ne-error" };
     case NE_STATUS.PENDING:      return { label: "NE未投入", kind: "ne-pending" };
     default:                     return { label: "NE未投入", kind: "ne-pending" };

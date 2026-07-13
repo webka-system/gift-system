@@ -24,12 +24,18 @@ export const CARD_STATUS = {
 
 // ===== NE 投入状態（design.md 3.3 / 第6章）=====
 // 「住所が確定した実商品受注のみ」を NE へ投入し、投入後にこの値を更新する。
-// 状態遷移（自動）: pending → submitting → submitted（成功）/ pending（失敗時に戻す＝リトライ可能）
+// ★NEの受注伝票アップロードAPI(/api_v1_receiveorder_base/upload)は**完全な非同期キュー方式**。
+//   アップロードのレスポンス(result=success + que_id)は「キュー受付」であって「取り込み完了」ではないため、
+//   受付だけでは submitted にしない。que_id をアップロードキュー検索API(/api_v1_system_que/search)で照会し、
+//   que_status_id==2(全処理成功)を確認して初めて submitted にする（-1=失敗は pending に戻してリトライ）。
+// 状態遷移（自動）: pending → submitting → queued(que_id保持) → submitted（キュー成功）
+//                              └ 失敗時は pending に戻す（＝リトライ可能。発送漏れ防止）
 // 状態遷移（CSV） : pending → csv（CSV出力＝取込済み扱い）
 export const NE_STATUS = {
   PENDING: "pending",       // 未投入（トリガー/CSVが拾う対象）
   SUBMITTING: "submitting", // 自動投入の処理中（claimによる二重投入防止の中間状態）
-  SUBMITTED: "submitted",   // 自動連携で投入済（完了）
+  QUEUED: "queued",         // アップロードAPIに受付済み（que_id保持）。キュー確認で成否が確定するまでの中間状態。
+  SUBMITTED: "submitted",   // 自動連携で投入済（キューが正常終了＝que_status_id==2）
   CSV_EXPORTED: "csv",      // CSV出力済（手動/日次取込）
   ERROR: "error",           // 投入失敗（予約。当面は失敗時 pending に戻す運用）
 };

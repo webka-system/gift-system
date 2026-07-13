@@ -4,7 +4,94 @@
 後で設計書（`docs/design.md`）へ統合できる形でまとめる。仕様の正本は `design.md`、
 本ドキュメントは「いつ・何を・なぜそう解決したか」の履歴を担う。
 
-最終更新: 2026-07-09
+最終更新: 2026-07-13
+
+---
+
+## ★ 2026-07-13：NE API 自動投入の実接続を実装（審査通過・認証情報発行後）⏳（未デプロイ / dormant）
+
+NE審査が通り gift-system 専用アプリの client_id/client_secret が発行されたため、これまで dormant だった
+NE連携の**実送信**を実装した。方式は「**実証済みの41列CSVを受注伝票アップロードAPIに送る**」（手動取込で
+NE登録成功が確認済みの形式をそのまま流用＝フォーマット起因のトラブルを避ける）。個別フィールド方式
+（`ne/order.ts` の `buildOrderParams`）は**休眠のまま**（実送信では使わない）。
+
+### NE公式リファレンスで確定した契約（実装の根拠）
+- **認証交換 `POST /api_neauth`**：`uid`/`state`/`client_id`/`client_secret`（全必須）→ `access_token`(有効1日)/
+  `refresh_token`(有効3日)＋アカウント情報（`company_ne_id` 等）。client_id/secret が要るのは**この交換だけ**。
+- **受注伝票アップロード `POST /api_v1_receiveorder_base/upload`**：`access_token`(必須)/`refresh_token`/
+  `receive_order_upload_pattern_id`(必須・数値=**11**)/`data_type_1`="csv"(必須)/`data_1`=**CSVファイル内容
+  （Shift-JIS バイト列を form-urlencoded で）**(必須)/`wait_flag`(1=過負荷でも極力エラーにせず実行)。
+- **★完全な非同期キュー方式**：レスポンスは `result=success` と **`que_id`** を返すだけ＝「キュー受付」であり
+  「取り込み完了」ではない。取り込み結果は **`POST /api_v1_system_que/search`**（`fields` 必須・`que_id-eq=<id>` で絞込）で
+  `que_status_id`（**2=全処理成功 / 1=処理中 / 0=処理待ち / -1=処理失敗**）と `que_message` を照会して確定する。
+- **トークンローテーション（最重要のクセ）**：どのAPIもレスポンスに新 access/refresh を返すことがある。
+  **返ってきたら必ず保存**して次回に使う（更新されると古い値は無効）。全経路で `persistRotatedTokens` を通す。
+
+### 実装（変更・新規ファイル）
+- `shared/constants.js`：`NE_STATUS.QUEUED`（アップロード受付済み・que_id保持・取込結果は未確定）を追加。
+  状態遷移コメントを2段階（pending→submitting→queued→submitted）に更新。
+- `functions/src/config/secrets.ts`(新)：`defineSecret("NE_CLIENT_ID")`/`NE_CLIENT_SECRET`（Secret Manager）。
+  **neCallback にのみ注入**（認証交換専用。投入経路には注入せず露出面を最小化）。
+- `functions/src/config/env.ts`：`authEndpoint`/`uploadEndpoint`/`queEndpoint`/`waitFlag` を追加（既定値あり）。
+  `isNeAutoConfigured` を **mode=auto かつ uploadEndpoint・uploadPatternId が揃うこと**に変更（client_id/secret には
+  依存させない＝投入経路に不要。トークン未取得なら neApiCall がエラー→pending 残置）。storeCode/uploadPatternId を
+  呼び出し時に process.env から読むよう統一。
+- `functions/src/ne/client.ts`：**通常v1 APIは access/refresh のみ**（client_id/secret を送らない）に整理。
+  認証交換 `neAuthExchange(uid,state)`（/api_neauth）を追加。バイナリ（Shift-JIS CSV）を1フィールドに載せる
+  `neApiUpload(...)`＋`percentEncodeBytes(buf)`（1バイトずつ %XX。URLSearchParams だと UTF-8 再エンコードで
+  Shift-JIS が壊れるための要）を追加。全経路でトークンローテーション保存。
+- `functions/src/http/ne-callback.ts`：**prod 側でトークン交換を本実装**（neAuthExchange→neAuth/tokens 保存）。
+  secrets を宣言。test 側は受領確認のみのスタブ温存（本番トークンの誤上書き防止）。uid/state/トークンはログに出さない。
+- `functions/src/ne/rows.ts`(新)：`giftCardToNeCsvRow(card, product)`＝GiftCardData→NeCsvRow 変換を共通化
+  （管理画面CSV出力とAPI投入で**同一の行**を生成）。日時/数字のみ/住所1=都道府県+住所 等の整形もここへ集約。
+- `functions/src/ne/upload.ts`(新)：`uploadNeCsvRows(rows)`＝41列 Shift-JIS CSV を作り upload API へ。que_id を返す。
+- `functions/src/ne/que.ts`(新)：`checkQueStatus(queId)`＝system_que/search で que_status_id を確認。`mapQueStatusId`。
+- `functions/src/ne/submit.ts`：**2段階に全面差し替え**。`trySubmitCard`（claim pending→submitting→アップロード→
+  **queued**(que_id保持) / 失敗は pending）＋`advanceQueuedCard`（queued の que_id を確認→成功=**submitted** /
+  失敗=**pending** / 処理中=queued 維持）。status は used のまま＝トリガー再発火なし。
+- `functions/src/http/admin-ne.ts`：CSV出力を `giftCardToNeCsvRow` に統一。`adminRetryNeSubmissions` に
+  **`?cardId=<id>` / `?limit=N`** を追加し、**pending を投入＋queued を前進**の両方を1エンドポイントで処理
+  （段階テスト用。**新規HTTP関数は増やさない＝Cloud Run 手動public設定の追加は不要**）。
+- `functions/src/models/index.ts`：`neQueId`/`neQueuedAt` を追加。
+- `web/admin/js/status.js`：`queued`＝「NE受付済(確認待ち)」バッジ（黄系 ne-progress）を追加。
+- `functions/.env.example`：Secret Manager 方式へ更新（client_id/secret は .env に置かない）。`NE_UPLOAD_PATTERN_ID` と
+  既定エンドポイントのコメントを記載。旧 `NE_ORDER_ENDPOINT` は廃止。
+
+### 検証
+- functions **lint / build / ユニットテスト 47 passing** 緑。新規テスト：通常呼び出しで client_id/secret を送らない・
+  `neAuthExchange`（uid/state/client_id/client_secret 送信＋初期トークン保存）・`percentEncodeBytes`（%82%A0）・
+  `neApiUpload`（data_1 に Shift-JIS バイトを percent-encode で連結・ローテーション）・`uploadNeCsvRows`（pattern_id=11・
+  data_type_1=csv・data_1 をデコードすると41列ヘッダー＋氏名が復元）・`checkQueStatus`（que_id-eq 絞込・2/空→found判定）・
+  `mapQueStatusId`・`giftCardToNeCsvRow`（住所1=都道府県+住所・数字のみ・日付スラッシュ・JST受注日）。
+- ※実 NE への送信は client_id/secret・トークン・NE_MODE=auto・NE_UPLOAD_PATTERN_ID が揃うまで発生しない（dormant）。
+
+### 私（運用者）が用意すること
+1. **Secret Manager にNE認証情報を登録**（デプロイ前に必須。未登録だと neCallback のデプロイが失敗する）:
+   - `firebase functions:secrets:set NE_CLIENT_ID`
+   - `firebase functions:secrets:set NE_CLIENT_SECRET`
+2. **NE管理画面で店舗2のパターン11（ギフトカード / フォーマット90）を「有効」化**（無効だと投入が弾かれる）。
+3. `functions/.env` に `NE_UPLOAD_PATTERN_ID=11`（と `PUBLIC_HOSTING_ORIGIN`）。**NE_MODE は当面 csv のまま**（段階テスト後に auto）。
+
+### デプロイ手順
+- **前提**：上記 Secret Manager 登録を先に済ませる（未登録だと neCallback のデプロイが失敗）。
+- `firebase deploy --only functions,hosting`（hosting は status.js / shared/constants.js の QUEUED 反映のため）。
+- ★**新規HTTP関数は無い**（neCallback/neCallbackTest/adminRetryNeSubmissions は既存＝既に public 設定済み）。
+  ただし neCallback は今回 **secrets を宣言**したため再デプロイで Cloud Run リビジョンが更新される。invoker(public) は
+  コードで宣言済みだが、**組織ポリシーの都合で再デプロイ後に 401 が出たら Cloud Run で public 設定を確認**すること。
+
+### 段階テスト手順（いきなり全件自動投入しない）
+1. **フェーズ1（認証のみ）**：デプロイ後、NEのOAuthフローを1回通す（prod Redirect URI=neCallback）。
+   `neAuth/tokens` に access/refresh が保存され、コールバック画面が「認証が完了し…」を表示すればOK。まだ投入しない。
+2. **フェーズ2（読取り疎通・任意）**：`NE_MODE=auto`＋`NE_UPLOAD_PATTERN_ID=11` を設定して functions を再デプロイ。
+   ※この時点ではトリガーが動くので、テスト対象カード以外に pending が無い状態で進めると安全。
+3. **フェーズ3（1件だけ投入）**：確定済み（used/pending）カードを1枚用意し、管理者トークンで
+   `POST /api/adminRetryNeSubmissions?cardId=<id>` を叩く → `{queued:1}`。もう一度叩く → `{submitted:1}`（キュー成功時）。
+   NE店舗2で受注が立つか、支払方法「ポイント全額払い」・発送方法「宅急便」・時間帯指定などの区分を**目視確認**。
+   失敗時は pending に戻り `neLastError` に理由が入る（区分表記の要修正等を確認して差し替え）。
+4. **フェーズ4（自動投入ON）**：問題なければ以後は確定の瞬間に `onGiftCardConfirmed` が自動で queued 化。
+   queued→submitted の確定は当面 `adminRetryNeSubmissions`（cardId/limit なしで全件前進）で運用。
+   **★次段階の宿題**：queued を自動で submitted まで進める **スケジュール関数（onSchedule）** を追加すれば完全自動化
+   （Cloud Scheduler。HTTP関数ではないので手動public設定は不要）。段階テストが済むまでは追加しない。
 
 ---
 

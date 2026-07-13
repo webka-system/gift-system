@@ -1,29 +1,35 @@
 /**
- * NE 自動投入のオーケストレーション（claim → submit → 状態更新）
+ * NE 自動投入のオーケストレーション（2段階：アップロード受付 → キュー確認）
  *
- * 非同期・裏方の投入（design.md 第6章 / 本ステップ方針）:
- *   - 確定は neStatus:pending で必ず成功させ（受け取り者体験を巻き添えにしない）、
- *     投入はここで別途行う。Firestoreトリガー（確定の瞬間）と手動リトライの双方から呼ぶ。
- *   - **claim**: トランザクションで pending → submitting に原子的に遷移させ、二重投入を防ぐ。
- *   - 成功: submitting → submitted（+ neSubmittedAt）。
- *   - 失敗: submitting → pending（+ neLastError / neAttempts++）。**pending に戻す＝リトライ可能**。
- *     status は used のまま変えないため、確定トリガーの再発火ループは起きない。
+ * 受注伝票アップロードAPIは**非同期キュー方式**なので、投入は2段階になる（design.md 第6章 / 実接続方針）:
+ *   [1] trySubmitCard: 確定済みカードの CSV を作ってアップロードAPIへ送信し、que_id を受け取って **queued** にする。
+ *       - claim: トランザクションで pending → submitting に原子的に遷移（二重投入防止）。
+ *       - 送信成功: submitting → queued（+ neQueId / neQueuedAt）。※まだ submitted にしない（取り込み未確定）。
+ *       - 送信失敗: submitting → pending（+ neLastError / neAttempts++）＝リトライ可能。
+ *   [2] advanceQueuedCard: queued のカードの que_id をキュー検索して取り込み結果を確定する。
+ *       - 成功(==2): queued → submitted（+ neSubmittedAt）。
+ *       - 失敗(==-1): queued → pending（+ neLastError=que_message / neAttempts++）＝リトライ可能。
+ *       - 処理中/待ち/未検出: queued のまま（次回再確認）。
+ *
+ * いずれも status は used のまま変えないため、確定トリガーの再発火ループは起きない。
  */
 
 import { logger } from "firebase-functions/v2";
 import { FieldValue } from "firebase-admin/firestore";
-import { CARD_STATUS, NE_STATUS, NE_FIXED } from "../config/constants";
-import { neConfig } from "../config/env";
+import { CARD_STATUS, NE_STATUS } from "../config/constants";
 import { db, giftCardsRef, selectableProductsRef } from "../lib/firestore";
-import { neApiCall, NeCallDeps } from "./client";
-import { buildOrderParams } from "./order";
+import { NeCallDeps } from "./client";
+import { giftCardToNeCsvRow } from "./rows";
+import { uploadNeCsvRows } from "./upload";
+import { checkQueStatus } from "./que";
 
-export type SubmitResult = "submitted" | "skipped" | "failed";
+export type SubmitResult = "queued" | "failed" | "skipped";
+export type AdvanceResult = "submitted" | "failed" | "waiting" | "skipped";
 
 /**
- * 1枚のカードを NE へ投入しようと試みる。
+ * [1] 1枚のカードを NE 受注伝票アップロードAPIへ投入する（受付まで）。
  *   - skipped: 対象外（used でない / pending でない / 既に処理済み等）。
- *   - submitted: 投入成功（neStatus=submitted）。
+ *   - queued: アップロード受付成功（neStatus=queued・que_id 保持）。取り込み成否は advanceQueuedCard で確定。
  *   - failed: 投入失敗（neStatus は pending に戻し、リトライ可能）。
  */
 export async function trySubmitCard(cardId: string, deps: NeCallDeps = {}): Promise<SubmitResult> {
@@ -35,7 +41,7 @@ export async function trySubmitCard(cardId: string, deps: NeCallDeps = {}): Prom
     if (!snap.exists) return null;
     const card = snap.data()!;
     if (card.status !== CARD_STATUS.USED) return null;
-    if (card.neStatus !== NE_STATUS.PENDING) return null; // 既に submitting/submitted/csv 等
+    if (card.neStatus !== NE_STATUS.PENDING) return null; // 既に submitting/queued/submitted/csv 等
     tx.update(cardRef, { neStatus: NE_STATUS.SUBMITTING });
     return card;
   });
@@ -48,29 +54,18 @@ export async function trySubmitCard(cardId: string, deps: NeCallDeps = {}): Prom
     if (!prod) throw new Error("selected product not found");
     if (!claimed.shippingAddress) throw new Error("shippingAddress missing");
 
-    const usedAt = claimed.usedAt as { toDate?: () => Date } | undefined;
-    const orderDate = usedAt?.toDate ? usedAt.toDate().toISOString().slice(0, 10) : "";
-
-    const params = buildOrderParams({
-      token: claimed.token,
-      orderDate,
-      neProductCode: prod.neProductCode,
-      productName: prod.name,
-      quantity: NE_FIXED.QUANTITY, // 1カード=1商品（design.md 3.3）
-      address: claimed.shippingAddress,
-      email: claimed.recipientEmail || "",
-      deliveryDate: claimed.deliveryDate,
-      deliveryTime: claimed.deliveryTime,
-    });
-
-    await neApiCall(neConfig().orderEndpoint, params, deps);
+    // 実証済みの41列CSV（1行）を作ってアップロード。管理画面CSV出力と同一のマッピング（ne/rows.ts）。
+    const row = giftCardToNeCsvRow(claimed, { name: prod.name, neProductCode: prod.neProductCode });
+    const { queId } = await uploadNeCsvRows([row], deps);
 
     await cardRef.update({
-      neStatus: NE_STATUS.SUBMITTED,
-      neSubmittedAt: FieldValue.serverTimestamp(),
+      neStatus: NE_STATUS.QUEUED,
+      neQueId: queId,
+      neQueuedAt: FieldValue.serverTimestamp(),
       neLastError: FieldValue.delete(),
     });
-    return "submitted";
+    logger.info("trySubmitCard queued", { cardId, queId });
+    return "queued";
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown";
     logger.error("trySubmitCard failed", { cardId, message });
@@ -82,4 +77,52 @@ export async function trySubmitCard(cardId: string, deps: NeCallDeps = {}): Prom
     });
     return "failed";
   }
+}
+
+/**
+ * [2] queued のカードの取り込み結果を確認して確定させる。
+ *   - skipped: 対象外（queued でない / que_id なし）。
+ *   - submitted: 取り込み成功（que_status_id==2）。
+ *   - failed: 取り込み失敗（que_status_id==-1）→ pending に戻す（リトライ可能）。
+ *   - waiting: まだ処理中/処理待ち/未検出 → queued のまま（次回再確認）。
+ */
+export async function advanceQueuedCard(cardId: string, deps: NeCallDeps = {}): Promise<AdvanceResult> {
+  const cardRef = giftCardsRef.doc(cardId);
+  const snap = await cardRef.get();
+  if (!snap.exists) return "skipped";
+  const card = snap.data()!;
+  if (card.neStatus !== NE_STATUS.QUEUED || !card.neQueId) return "skipped";
+
+  let result;
+  try {
+    result = await checkQueStatus(String(card.neQueId), deps);
+  } catch (err) {
+    // 検索自体の失敗は queued を維持（取り込みの成否は不明のまま。次回再確認）。
+    logger.error("advanceQueuedCard: que search failed", {
+      cardId, message: err instanceof Error ? err.message : "unknown",
+    });
+    return "waiting";
+  }
+
+  if (result.status === "success") {
+    await cardRef.update({
+      neStatus: NE_STATUS.SUBMITTED,
+      neSubmittedAt: FieldValue.serverTimestamp(),
+      neLastError: FieldValue.delete(),
+    });
+    logger.info("advanceQueuedCard submitted", { cardId, queId: card.neQueId });
+    return "submitted";
+  }
+  if (result.status === "failed") {
+    await cardRef.update({
+      neStatus: NE_STATUS.PENDING,
+      neLastError: `que failed: ${result.message}`.slice(0, 500),
+      neAttempts: FieldValue.increment(1),
+    });
+    logger.warn("advanceQueuedCard failed → pending", { cardId, queId: card.neQueId, message: result.message });
+    return "failed";
+  }
+  // processing / waiting / unknown（未検出含む）: queued のまま。
+  logger.info("advanceQueuedCard still waiting", { cardId, queId: card.neQueId, status: result.status });
+  return "waiting";
 }

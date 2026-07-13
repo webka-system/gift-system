@@ -9,7 +9,6 @@
  */
 
 import { DELIVERY, PREFECTURES, EXPIRY_CONTACT } from "/shared/constants.js";
-import { deliveryDateBounds as computeDeliveryBounds, ymdToJp } from "/shared/delivery.js";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -25,9 +24,30 @@ const KANA_RE = /^[゠-ヿ　\s]+$/;
 // 簡易メール形式（前後空白なし・@・ドメインにドット）。
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** 配達希望日の選択可能範囲（今日基準 / 確定日相当）。純粋ロジックは shared/delivery.js。 */
+/** Date → "YYYY-MM-DD"（ローカル日付）。 */
+function ymd(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** "YYYY-MM-DD" → "M月D日"（案内・エラー文の日本語表記）。 */
+function ymdToJp(s) {
+  const p = String(s).split("-");
+  return p.length === 3 ? `${Number(p[1])}月${Number(p[2])}日` : String(s);
+}
+
+/**
+ * 配達希望日の選択可能範囲（今日基準 / 確定日相当。min=+MIN_DAYS, max=+MAX_MONTHS）。
+ * ★受け取り者ページ（注文の生命線）を **外部sharedファイルの配信有無に依存させない**ため、
+ *   ここに自己完結で持つ（万一 shared 資産の配信が欠けても注文フローが白画面で落ちない）。
+ *   同一ロジックの単体テストは shared/delivery.js（functions/test/delivery.spec.ts）で担保。
+ */
 function deliveryDateBounds() {
-  return computeDeliveryBounds(Date.now(), DELIVERY.MIN_DAYS, DELIVERY.MAX_MONTHS);
+  const min = new Date(); min.setDate(min.getDate() + DELIVERY.MIN_DAYS);
+  const max = new Date(); max.setMonth(max.getMonth() + DELIVERY.MAX_MONTHS);
+  return { min: ymd(min), max: ymd(max) };
 }
 
 // 配達希望日が範囲外のときに立てるフラグ（確定ボタンの無効化に使う）。

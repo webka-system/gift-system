@@ -153,6 +153,37 @@ NE登録成功が確認済みの形式をそのまま流用＝フォーマット
 
 ---
 
+## 🚨 2026-07-13 障害と恒久対策：shared 配信漏れで受け取り者ページが白画面
+
+**事象**：上記の配達希望日対応（shared/delivery.js 新規追加）を hosting デプロイしたところ、受け取り者ページが
+「読み込んでいます…」のまま停止（注文不可の致命的障害）。
+
+**原因**：
+- 本番 `/shared/delivery.js` が **404**（constants.js/expiry.js は200）。ローカル `web/shared/` も Jul 9 のまま
+  （delivery.js 無し・constants.js に QUEUED/MANUAL 無し）＝**hosting predeploy のコピーが Jul 9 以降実行されていなかった**。
+- 新 receive.js は配信されており `import "/shared/delivery.js"` が 404 → **モジュール読込失敗で init() に到達せず白画面**。
+- predeploy のコピーコマンド自体は手動実行では正常。**「デプロイ時にコピーが走る」前提が崩れると即本番障害**という設計の弱さが露呈。
+
+**恒久対策（3層）**：
+1. **受け取り者ページを外部sharedファイルに依存させない**：delivery ロジックを receive.js に**インライン化**
+   （import 撤去）。注文の生命線ページが、新規shared資産の配信漏れで二度と落ちないように。receive.js の import は
+   実績のある constants.js のみ。同一ロジックの単体テストは shared/delivery.js（delivery.spec.ts）で継続担保。
+2. **web/shared/ を git 管理下に置く**（`.gitignore` から除外して生成物を commit）。predeploy の実行有無に関わらず
+   **必ず配信される安全網**。古い constants.js（QUEUED/MANUAL 欠け＝admin バッジ不整合）もこれで解消。
+3. **コピー対象の列挙漏れを無くす**：`scripts/sync-shared.js` を新設し **shared/ 配下の全 .js を自動コピー**
+   （firebase.json predeploy を `node scripts/sync-shared.js` に変更）。今後 shared にファイルを足しても列挙漏れで壊れない。
+
+**運用ルール**：shared/*.js を追加/変更したら `node scripts/sync-shared.js` で web/shared を再生成し **commit** する
+（web/shared は追跡対象）。デプロイ時に predeploy も同じ生成を行う（二重の安全）。
+
+**検証**：receive.js は constants.js のみ import（node --check 緑・delivery参照はコメントのみ）。sync-shared.js で
+  web/shared に3ファイル生成を確認。functions は無変更（test 61 passing のまま）。
+
+**デプロイ（この修正）**：**hosting のみ＝`firebase deploy --only hosting`**。web/shared は commit 済みのため
+  predeploy 有無に関わらず配信される。反映後、受け取り者ページが正常表示され注文フローが通ることを確認する。
+
+---
+
 ## 0. 2026-07-09：NE必須項目に合わせた受け取り者フォーム完成 ✅（未デプロイ）
 
 NE連携の本格稼働前に、**受け取り者フォームをNEの受注CSV必須項目に合わせて完成**させた

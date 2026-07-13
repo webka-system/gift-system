@@ -42,8 +42,10 @@ storage-debug.log*
 dist/
 build/
 out/
-# Hosting predeploy が生成する shared/constants.js のコピー（単一情報源は repo直下の shared/）
-web/shared/
+# ※ web/shared/（shared/*.js のブラウザ配信用コピー）は **あえて git 管理下に置く**。
+#   理由: hosting predeploy のコピーが走らない事故（2026-07-13 発生）で本番配信が欠け、受け取り者ページが
+#   白画面になった。生成物だが commit しておくことで、predeploy の実行有無に関わらず必ず配信される（安全網）。
+#   ★shared/*.js を追加/変更したら `node scripts/sync-shared.js` で web/shared を再生成して commit すること。
 # ※汎用 "lib/" はソースの functions/src/lib まで巻き込むため使わない。
 #   ビルド出力は functions/lib/（下の Cloud Functions セクション）で個別に除外する。
 .next/

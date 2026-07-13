@@ -192,9 +192,11 @@
         <label class="inline"><input id="ne-csv-mark" type="checkbox" /> ダウンロードした分を「取込済み」にする（二重取込防止）</label>
         <div><button id="ne-csv-btn" type="button">未投入CSVをダウンロード</button></div>
 
-        <h3>自動投入のリトライ</h3>
-        <p class="muted small">自動投入が有効なときのみ動作します（未設定・CSV運用時は対象0件）。</p>
-        <div><button id="ne-retry-btn" type="button">未投入分を再投入</button></div>
+        <h3>NEへの一括投入・結果確認</h3>
+        <p class="muted small">NE投入が有効（NE_MODE=auto／manual かつパターンID設定済み）なときに動作します（csv運用・未設定時は対象0件）。
+          未投入（pending）を投入し、受付済み（queued）はキュー結果を確認して確定します。<strong>個別カードの投入は各カードの「詳細」→「ネクストエンジン投入」からも行えます。</strong>
+          アップロードは非同期のため、押した直後は「受付済」、少し待ってもう一度押すと「投入済／失敗」が確定します。</p>
+        <div><button id="ne-retry-btn" type="button">未投入を投入・受付済を確認</button></div>
         <p id="ne-result" class="result"></p>
       </section>
     </main>

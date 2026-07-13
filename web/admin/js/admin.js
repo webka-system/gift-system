@@ -1003,6 +1003,8 @@ async function openCardDetail(cardId) {
       <div><button data-act="expiry-save" type="button">有効期限を保存</button></div>
     </section>
 
+    ${used ? neSubmitSectionHtml(card) : ""}
+
     ${used ? `<section class="detail-section">
       <h3>管理者操作</h3>
       ${neWarnHtml(card)}
@@ -1013,6 +1015,58 @@ async function openCardDetail(cardId) {
     </section>` : ""}
 
     ${historyHtml(card)}`;
+}
+
+/**
+ * 詳細ビューの「ネクストエンジン投入」セクション（使用済みカードのみ）。
+ * 非同期キューのため、状態に応じてボタンの意味が変わる:
+ *   pending/未投入 → 「NEへ手動投入」（確認ダイアログ。押すと queued へ）
+ *   queued        → 「取り込み結果を確認」（que_id を照会し submitted / pending を確定）
+ *   submitting    → 処理中表示（ボタンなし）
+ *   submitted/csv → 投入済み表示（再投入は『未使用に戻す』でやり直す旨を案内。二重投入防止）
+ * neLastError（直近の失敗理由）・que_id・投入完了日時も表示して、管理者が原因を追えるようにする。
+ */
+function neSubmitSectionHtml(card) {
+  const st = card.neStatus;
+  const ne = neStatusInfo(st);
+  const isQueued = st === NE_STATUS.QUEUED;
+  const isSubmitting = st === NE_STATUS.SUBMITTING;
+  const isSent = st === NE_STATUS.SUBMITTED || st === NE_STATUS.CSV_EXPORTED;
+
+  const errHtml = card.neLastError
+    ? `<div class="ne-warn">⚠ 直近の投入エラー: ${esc(card.neLastError)}</div>` : "";
+  const queRow = card.neQueId ? addrRow("キューID（que_id）", card.neQueId) : "";
+  const submittedRow = card.neSubmittedAt ? addrRow("投入完了日時", fmtDate(card.neSubmittedAt)) : "";
+
+  let action, note;
+  if (isSent) {
+    action = "";
+    note = `<p class="muted small">このカードは既にネクストエンジンに投入済みです。再投入が必要な場合は
+      「未使用に戻す」で受注をやり直してください（二重投入防止のため、ここからは再投入できません）。</p>`;
+  } else if (isSubmitting) {
+    action = "";
+    note = `<p class="muted small">投入処理中です。少し待ってから詳細を開き直してください。</p>`;
+  } else if (isQueued) {
+    action = `<div class="detail-ops"><button data-act="ne-manual-submit" type="button">取り込み結果を確認</button></div>`;
+    note = `<p class="muted small">アップロードは受付済み（キュー）です。<strong>「取り込み結果を確認」</strong>を押すと
+      que_id を照会し、成功なら「NE投入済」、失敗なら「未投入」に戻して原因を表示します（数十秒待ってから押してください）。</p>`;
+  } else {
+    // pending / error / 未設定
+    action = `<div class="detail-ops"><button data-act="ne-manual-submit" type="button">NEへ手動投入</button></div>`;
+    note = `<p class="muted small">押すと店舗2（パターン11）へ投入します。<strong>非同期のため1回目は「受付済」</strong>になり、
+      もう一度「取り込み結果を確認」を押すと投入完了/失敗が確定します。</p>`;
+  }
+
+  return `<section class="detail-section">
+    <h3>ネクストエンジン投入</h3>
+    <div class="detail-row">
+      <span class="detail-label">現在の状態</span>
+      <span class="detail-value status-cell"><span class="badge badge-${ne.kind}">${ne.label}</span></span>
+    </div>
+    ${queRow}${submittedRow}${errHtml}
+    ${note}
+    ${action}
+  </section>`;
 }
 
 // NE 投入済み（投入済/CSV出力済/投入中）とみなす状態。編集・やり直し時に警告を出す対象。
@@ -1090,6 +1144,54 @@ async function onDetailClick(e) {
   if (act === "edit-save") { await onEditSave(btn); return; }
   if (act === "card-reset") { await onCardReset(btn); return; }
   if (act === "expiry-save") { await onExpirySave(btn); return; }
+  if (act === "ne-manual-submit") { await onManualSubmitNe(btn); return; }
+}
+
+/** ネクストエンジンへの手動投入 / 取り込み結果確認（詳細ビュー・単一カード）。 */
+async function onManualSubmitNe(btn) {
+  const id = detailCardId;
+  if (!id) return;
+  const card = cardsCache.find((c) => c.id === id);
+  if (!card) return;
+  const isQueued = card.neStatus === NE_STATUS.QUEUED;
+
+  // 初回投入（pending 等）のときだけ確認ダイアログ。queued の結果確認は状態照会なので確認不要。
+  if (!isQueued) {
+    if (card.neStatus === NE_STATUS.SUBMITTED || card.neStatus === NE_STATUS.CSV_EXPORTED) {
+      flash("このカードは既にNE投入済みです（二重投入防止）。", "error");
+      return;
+    }
+    if (!confirm("このカードをネクストエンジン（店舗2・パターン11）に投入します。よろしいですか？")) return;
+  }
+
+  btn.disabled = true;
+  try {
+    const res = await authorizedFetch(`/api/adminRetryNeSubmissions?cardId=${encodeURIComponent(id)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data?.code || `HTTP ${res.status}`);
+    if (!data.configured) {
+      flash("NE投入は有効になっていません（NE_MODE=csv、またはパターンID未設定）。", "error");
+      btn.disabled = false;
+      return;
+    }
+    flash(neManualResultMsg(data), data.failed ? "error" : "info");
+    await refreshDetailCard(id); // 詳細を取り直して neStatus / neLastError / que_id を最新化。
+  } catch (err) {
+    flash(`NE投入に失敗しました: ${err?.message || err}`, "error");
+    btn.disabled = false;
+  }
+}
+
+/** 手動投入APIの結果（1件）を管理者向けメッセージに。 */
+function neManualResultMsg(d) {
+  if (d.submitted) return "取り込み成功：NEに投入済みになりました。";
+  if (d.queued) return "キューに受付されました（受付済）。数十秒後に「取り込み結果を確認」を押してください。";
+  if (d.failed) return "投入に失敗しました。「直近の投入エラー」をご確認ください（未投入に戻しました）。";
+  if (d.waiting) return "まだ取り込み処理中です。少し待って「取り込み結果を確認」を押してください。";
+  return "対象外でした（状態が既に変化している可能性があります）。";
 }
 
 /** 有効期限の個別上書き保存（確認ダイアログ → adminSetCardExpiry）。期限切れの延長にも使う。 */
@@ -1316,8 +1418,8 @@ async function onRetryNe() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(data?.code || `HTTP ${res.status}`);
     busyDone($("#ne-result"), data.configured
-      ? `投入済 ${data.submitted} / 失敗 ${data.failed} / 対象外 ${data.skipped}`
-      : "自動投入は未設定です（CSV運用中）。対象0件。");
+      ? `投入済 ${data.submitted ?? 0} / 受付済 ${data.queued ?? 0} / 確認待ち ${data.waiting ?? 0} / 失敗 ${data.failed ?? 0} / 対象外 ${data.skipped ?? 0}`
+      : "NE投入は未設定です（CSV運用中）。対象0件。");
   } catch (err) {
     busyDone($("#ne-result"));
     flash(`リトライに失敗しました: ${err?.message || err}`, "error");

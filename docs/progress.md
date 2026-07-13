@@ -92,10 +92,39 @@ NE登録成功が確認済みの形式をそのまま流用＝フォーマット
    発送方法「宅急便」・時間帯指定などの区分を**目視確認**。失敗時は pending に戻り `neLastError` に理由が入る
    （区分表記の要修正等を確認して差し替え）。
 3. **フェーズ4（自動投入ON）**：問題なければ `NE_MODE=auto` に上げて再デプロイ。以後は確定の瞬間に
-   `onGiftCardConfirmed` が自動で queued 化。
-   queued→submitted の確定は当面 `adminRetryNeSubmissions`（cardId/limit なしで全件前進）で運用。
-   **★次段階の宿題**：queued を自動で submitted まで進める **スケジュール関数（onSchedule）** を追加すれば完全自動化
-   （Cloud Scheduler。HTTP関数ではないので手動public設定は不要）。段階テストが済むまでは追加しない。
+   `onGiftCardConfirmed` が自動で queued 化し、**`neAdvanceQueued`（15分毎のスケジュール）が queued→submitted を自動確定**する
+   （下記「★2026-07-13追補」参照）。管理者が手動ボタンを押して回る必要はない（手動ボタンは失敗リカバリ用に残置）。
+
+---
+
+## ★ 2026-07-13 追補：queued→submitted の自動確定（Cloud Scheduler）＋管理画面の手動投入ボタン
+
+**【1】管理画面「NEへ手動投入」ボタン（恒久機能）**
+- カード詳細に「ネクストエンジン投入」セクションを追加（使用済みのみ）。現在の neStatus・que_id・投入完了日時・
+  **neLastError（失敗理由）** を表示し、状態に応じて「NEへ手動投入」（pending→確認ダイアログ→queued）／
+  「取り込み結果を確認」（queued→submitted/pending）を出す。submitted/csv は再投入不可（二重投入防止・やり直し案内）。
+- 既存 `adminRetryNeSubmissions?cardId=` を叩く（ログイン済みで IDトークン自動付与）。**新規HTTP関数なし＝手動public不要**。
+- 一括ボタン(#ne-retry-btn)の結果表示を新レスポンス（submitted/queued/waiting/failed/skipped）に更新。NEタブ説明も更新。
+
+**【2】queued 自動確定のスケジュール関数 `triggers/ne-advance.ts`（`neAdvanceQueued`）**
+- **Cloud Scheduler で15分毎**に実行し、queued カードの que_id を `system_que/search` で照会して
+  成功=submitted / 失敗=pending（+neLastError）に確定。手動ボタンは失敗リカバリ用に残置。
+- **★API回数の節約**：まず Firestore を見て **queued が1件も無ければ NE API を一切叩かず即終了**（queued 0件のtickは
+  Firestore 読み取り1回のみ）。よって NE API 呼び出しは受注数（queued 発生数）に比例したまま＝間隔を短くしても無駄打ち無し。
+  月1000件規模に届かない前提なので、受注1件あたり2回程度（アップロード1＋キュー確認1）で回数上限に十分余裕（バッチ化不要）。
+- **auto のときだけ動く**（`isNeAutoConfigured`）。manual/csv では動かさない（manual は手動確認モードのため）。
+- que_id ごとに `que_id-eq` で1回照会（テスト済み `advanceQueuedCard` を再利用）。`que_id-in` でのまとめ照会は書式の
+  確証が取れないため現状は eq。将来ボリューム増時にまとめ照会へ切替の余地。トークンは access/refresh のみ＝**secrets不要**。
+- **★Cloud Run 手動public設定は不要**：`onSchedule`（第2世代）は **Cloud Scheduler の専用サービスアカウントが OIDC で
+  呼ぶ**方式で、**allUsers 公開ではない**（HTTP関数の invoker=public とは別扱い）。組織ポリシーの allUsers 制限にも抵触
+  しない。firebase deploy が Scheduler ジョブと invoker（Scheduler SA への run.invoker）を自動設定する。デプロイ後に
+  Cloud Scheduler コンソールでジョブの「強制実行」→ 関数ログで `neAdvanceQueued` の稼働を確認するとよい。
+
+**検証**：functions lint / build / test **51 passing** 緑（既存＋env gating）。`neAdvanceQueued` 本体はトリガー同様に
+  emulator非依存の単体対象外（内部の advanceQueuedCard/checkQueStatus はテスト済み）。web は node --check 緑。
+
+**デプロイ**：`firebase deploy --only functions,hosting`。★**新規スケジュール関数 `neAdvanceQueued` を追加**するが、
+  上記のとおり **Cloud Run 手動public設定は不要**（Scheduler SA が OIDC で呼ぶ）。hosting は手動投入ボタンのため。
 
 ---
 

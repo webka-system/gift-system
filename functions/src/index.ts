@@ -42,6 +42,9 @@ export { receiveGetCard, receiveConfirm } from "./http/receive";
 // NE連携（design.md 第6章）:
 //   トリガー: 確定(used遷移)の瞬間に自動投入を試みる（未設定/CSV運用時は pending のまま）。
 export { onGiftCardConfirmed } from "./triggers/ne-submit";
+//   定期実行(Cloud Scheduler): queued の取り込み結果を確認して submitted/pending に確定（auto時のみ・queued無ければAPI不使用）。
+//   ★HTTP関数ではなく Scheduler トリガー＝Cloud Scheduler の専用SAがOIDCで呼ぶ。allUsers公開は不要（手動public設定も不要）。
+export { neAdvanceQueued } from "./triggers/ne-advance";
 //   管理API: 未投入受注の CSV出力（Shift_JIS）/ 自動投入の手動リトライ。
 export { adminExportNeCsv, adminRetryNeSubmissions } from "./http/admin-ne";
 //   認証コールバック（Redirect URI）: 本番用 /api/neCallback・テスト用 /api/neCallbackTest。

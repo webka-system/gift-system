@@ -68,8 +68,7 @@ export const COUPON = {
   TOTAL_USE_COUNT: 1,
   // 会員限定（確定仕様。1人1回は会員限定が前提）。→ createCoupon.isForOnlyMember=true
   IS_FOR_ONLY_MEMBER: true,
-  // 対象商品（確定仕様＝全商品。対象商品の限定フィールドは送らない）。
-  TARGET_ALL_PRODUCTS: true,
+  // 対象商品は全商品（確定仕様）。createCoupon では isTargetProduct=false を直接指定する（対象限定フィールドを送らない）。
   // ECサイト（株主が買い物するリンク先。会員登録もこの先で行う）。
   EC_URL: "https://www.otoriyose.site/",
   // クーポンコードの生成規則。

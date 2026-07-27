@@ -1278,7 +1278,7 @@ async function openCardDetail(cardId) {
 
 /**
  * クーポンカード（kind=coupon）専用の詳細ビュー。
- * カタログの受注詳細とは別物：商品/住所/NEは無く、クーポン発行状態・コード・テスト発行ボタン・
+ * カタログの受注詳細とは別物：商品/住所/NEは無く、クーポン発行状態・コード・手動発行/再発行ボタン・
  * MakeShop 生レスポンス表示（デバッグ用）を出す。恒久機能として失敗カードの手動再発行にも使う。
  */
 function couponDetailHtml(card) {
@@ -1351,9 +1351,9 @@ function couponDetailHtml(card) {
       ${note}
       ${action}
       <div class="detail-ops">
-        <button data-act="coupon-introspect" type="button" class="ghost">スキーマ確認（introspection）</button>
+        <button data-act="coupon-introspect" type="button" class="ghost">スキーマ診断</button>
       </div>
-      <p class="muted small">「スキーマ確認」は MakeShop の実スキーマ（CreateCouponRequest のフィールド名・enum値・結果型）を取得して下に表示します（クーポンは発行しません）。表示された内容を開発者に共有すると、送信フィールドを実スキーマに合わせられます。</p>
+      <p class="muted small">「スキーマ診断」は MakeShop の実スキーマ（CreateCouponRequest のフィールド名・enum値・結果型）を取得して下に表示します（クーポンは発行しません）。<strong>MakeShop がクーポンAPIの仕様を変更して発行が失敗するようになった際の切り分けに使う運用ツール</strong>です（introspection は本番で無効なため、変更内容はここで確認します）。</p>
       <div id="coupon-result" class="coupon-result"></div>
     </section>
 
@@ -1499,9 +1499,10 @@ async function onDetailClick(e) {
 }
 
 /**
- * MakeShop の実スキーマを取得して結果欄に表示する（introspection）。
+ * MakeShop の実スキーマを取得して結果欄に表示する（スキーマ診断・恒久の運用ツール）。
  * adminTestIssueCoupon の introspect モードを叩く（クーポンは発行しない）。
- * 表示された CreateCouponRequest のフィールド名・enum値・結果型を見て、送信フィールドを実スキーマに合わせる。
+ * MakeShop がAPI仕様を変更して発行が失敗した際、変更後のフィールド名・enum値・結果型を確認して
+ * 送信フィールド（makeshop/coupon.ts）を合わせるための切り分けに使う。introspection は本番で無効なため本ツールで取得する。
  */
 async function onIntrospectSchema(btn) {
   const resultEl = $("#coupon-result");
@@ -1530,7 +1531,7 @@ async function onIntrospectSchema(btn) {
 }
 
 /**
- * クーポンをテスト発行（詳細ビュー・単一カード）。adminTestIssueCoupon を叩く。
+ * クーポンを手動（再）発行（詳細ビュー・単一カード）。adminTestIssueCoupon を叩く。
  * 実際に MakeShop へ発行されるため確認ダイアログを挟む。結果（成功コード or 失敗の raw）を
  * モーダル内 #coupon-result にそのまま表示する（スキーマ調整のため raw を見せることが重要）。
  * ※詳細は開き直さない（raw を消さないため）。一覧のバッジだけ裏で最新化する。
@@ -1582,7 +1583,7 @@ async function onIssueCoupon(btn) {
 // 直近に表示した raw（生レスポンス／スキーマ）のJSON文字列。「コピー」ボタンで全文コピーするため保持。
 let lastCouponRawJson = "";
 
-/** テスト発行/スキーマ確認の結果（成功コード／失敗理由／MakeShop 生レスポンス raw）をモーダル内に表示する。 */
+/** 手動発行/スキーマ診断の結果（成功コード／失敗理由／MakeShop 生レスポンス raw）をモーダル内に表示する。 */
 function renderCouponResult(el, data) {
   if (!el) return;
   const parts = [];

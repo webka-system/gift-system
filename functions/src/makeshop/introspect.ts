@@ -6,7 +6,9 @@
  *   - CreateCouponResponse（返る型）の fields（results 配列とその要素型を辿る）
  *   - 上記から参照される **enum 型の値** と **results 要素のオブジェクト型の fields**（status/code 等）を芋づるで取得
  *
- * 認証は makeshopGraphql（固定トークン）に委譲。管理者が adminTestIssueCoupon の introspect モードで1回叩く。
+ * 認証は makeshopGraphql（固定トークン）に委譲。管理画面の「スキーマ診断」ボタン（adminTestIssueCoupon の
+ * introspect モード）から使う**恒久の運用ツール**。MakeShop が仕様変更したとき、変更後のスキーマをここで確認して
+ * makeshop/coupon.ts を合わせる（本番では introspection が無効なため、発行と同じ認証経路で取得する）。
  */
 
 import { makeshopGraphql, MakeshopCallDeps } from "./client";

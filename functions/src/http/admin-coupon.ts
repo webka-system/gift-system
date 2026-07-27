@@ -1,15 +1,13 @@
 /**
- * 管理API: クーポンの1件テスト発行（MakeShop 実接続の検証用）
+ * 管理API: クーポンの手動（再）発行＋スキーマ診断（恒久機能）
  *
- * 受け取り者フローに繋ぐ前に、「クーポンカード1枚を指定して、実際に MakeShop へクーポンを1件発行してみる」
- * ための隔離した仕組み。発行→MakeShop管理画面で目視確認→エラーがあれば errorMessage を見て
- * coupon.ts のフィールド名/enum を実スキーマに直す、というサイクルを回す（introspection を省いた実証アプローチ）。
- *
- * 使い方:
- *   1) 管理画面でクーポン種別を作成 → クーポンQRを1枚生成（couponExpiryAt が入る）。
- *   2) そのカードの id を渡してこの API を叩く（POST { cardId }）。
- *   3) 成功なら status=used・couponStatus=issued・couponCode 保存。MakeShop 側にクーポンが作られる。
- *      失敗なら未使用のまま・couponLastError と raw に MakeShop の応答が入るので、それを見て直す。
+ * 2つのモードを持つ:
+ *   - 手動（再）発行（body: { cardId }）: 指定カードのクーポンを MakeShop へ発行/再発行する（reissue=true）。
+ *     発行失敗して pending に残ったカードのリカバリや、発行済みカードの再発行（名前に【再発行 M/D】）に使う。
+ *     成功なら status=used・couponStatus=issued・couponCode 保存。失敗なら couponLastError と raw に MakeShop の応答。
+ *   - スキーマ診断（body: { introspect: true }）: MakeShop の実スキーマを取得して返す（クーポンは発行しない）。
+ *     MakeShop がAPI仕様を変更して発行が失敗した際、変更内容を確認して coupon.ts を合わせるための切り分けツール
+ *     （introspection は本番で無効なため、発行同経路の認証でスキーマを取得する）。
  *
  * 認証: requireAuth（管理者のみ）。★MakeShop 秘匿値（Secret Manager）をこの関数にだけ注入する。
  *
@@ -77,7 +75,7 @@ export const adminTestIssueCoupon = onRequest(COUPON_TEST_OPTIONS, async (req, r
     // 管理画面からの発行は「手動（再）発行」＝名前に【再発行 M/D】を付け、既発行カードも再発行できる。
     const outcome = await issueCouponForCard(cardId, { reissue: true });
     logger.info("adminTestIssueCoupon", { cardId, result: outcome.result, reason: outcome.reason });
-    // 失敗/スキップでも HTTP 200 で返す（管理テストなので結果と raw を UI/ログで確認するため）。
+    // 失敗/スキップでも HTTP 200 で返す（管理操作なので結果と raw を UI/ログで確認するため）。
     res.status(200).json({ ok: true, ...outcome });
   } catch (err) {
     logger.error("adminTestIssueCoupon failed", { cardId, message: err instanceof Error ? err.message : "unknown" });

@@ -28,6 +28,8 @@ function tokenFromUrl() {
 
 const token = tokenFromUrl();
 let ecUrl = "https://www.otoriyose.site/";
+// 会員登録の専用ページ（①のステップのリンク先。ECトップとは別URL・固定）。
+const REGISTER_URL = "https://www.otoriyose.site/html/page80.html";
 let waitTries = 0;
 const MAX_WAIT_TRIES = 4;
 
@@ -36,8 +38,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** 種別名・割引・有効期限・ECリンクを画面に反映（どの状態でも共通のメタ情報）。 */
 function applyMeta(data) {
   if (data.ecUrl) ecUrl = data.ecUrl;
-  const link = $("#ec-link"); if (link) link.href = ecUrl;
-  const link1 = $("#ec-link-1"); if (link1) link1.href = ecUrl;
+  const link = $("#ec-link"); if (link) link.href = ecUrl;                 // ②③ 用: ECサイトトップ
+  const link1 = $("#ec-link-1"); if (link1) link1.href = REGISTER_URL;     // ① 用: 会員登録ページ（専用URL）
   $("#coupon-name").textContent = data.couponType?.name || "";
   $("#coupon-discount").textContent = data.couponType?.discountText || "";
   $("#coupon-expiry").textContent = data.expiryText ? `有効期限：${data.expiryText}まで` : "";

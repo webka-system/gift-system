@@ -4,9 +4,9 @@
 > gift-system を**初めて見る第三者**が、前提知識ゼロの状態から仕様を完全に把握し、保守・改修・運用を引き継げるようにするための仕様書です。
 > 「何が実装されているか」だけでなく **「なぜそうなっているか（設計判断の理由）」** を各所に明記しています。理由が分からないと、後任者が良かれと思って壊すためです。
 >
-> **正本の優先順位**：迷ったら **実装コードが正**です。本書は 2026-07-13 時点の実装（リポジトリ `webka-system/gift-system`）を読んで書き起こしています。`docs/design.md`（当初設計）と `docs/progress.md`（開発ワークログ）も併読してください。設計と実装が食い違う場合、実装を信じてください。
+> **正本の優先順位**：迷ったら **実装コードが正**です。本書はカタログギフト部分を 2026-07-13 時点、株主優待クーポン部分（第11章）を 2026-07-27 時点の実装（リポジトリ `webka-system/gift-system`）を読んで書き起こしています。`docs/design.md`（当初設計）・`docs/progress.md`（開発ワークログ）・`docs/coupon-makeshop-api.md`（MakeShop クーポンAPIの実スキーマ）・`docs/OPERATION_MANUAL.md`（運用担当者向けの操作手順）も併読してください。設計と実装が食い違う場合、実装を信じてください。
 >
-> **最終更新**：2026-07-13
+> **最終更新**：2026-07-27（株主優待クーポン機能・管理画面のタブ分離・UI/UX整理を反映）
 
 ---
 
@@ -140,6 +140,11 @@ Firebase Hosting の `rewrites`（`firebase.json`）で `/api/<関数名>` か�
 | `adminUpdateGiftCard` | POST `/api/adminUpdateGiftCard` | 使用済みカードの受注内容（商品・住所・メール・配達希望）を管理者が上書き編集 | requireAuth |
 | `adminResetGiftCard` | POST `/api/adminResetGiftCard` | 使用済み→未使用へ戻す（やり直し）。戻す直前の内容を履歴に保存 | requireAuth |
 | `adminSetCardExpiry` | POST `/api/adminSetCardExpiry` | 個別カードの有効期限日数を上書き（延長/短縮/解除）。期限切れカードの救済に使う | requireAuth |
+| `adminTestIssueCoupon` | POST `/api/adminTestIssueCoupon` | **クーポンの手動（再）発行**（`{cardId}`・reissue=true・名前に【再発行 M/D】）＋**スキーマ診断**（`{introspect:true}`）。MakeShop秘匿値注入（第11章） | requireAuth |
+| `receiveGetCoupon` | GET `/api/receiveGetCoupon?token=` | クーポンカードの状態（issued/ready/issuing/expired）＋割引・有効期限・ECリンクを返す（副作用なし・第11章） | トークン照合 |
+| `receiveClaimCoupon` | POST `/api/receiveClaimCoupon` | 株主の**都度発行**。トランザクションで未発行を検証→MakeShop発行→issued 確定。MakeShop秘匿値注入（第11章） | トークン照合 |
+
+> ★クーポン系3関数（`adminTestIssueCoupon` / `receiveGetCoupon` / `receiveClaimCoupon`）は第11章（[11 株主優待クーポン機能](#11-株主優待クーポン機能kindcoupon)）で追加。詳細は同章と `docs/coupon-makeshop-api.md`。
 
 #### Firestore トリガー（`onDocumentWritten`）
 
@@ -157,23 +162,28 @@ Firebase Hosting の `rewrites`（`firebase.json`）で `/api/<関数名>` か�
 
 ```
 web/
-├── admin/              管理画面（要ログイン）
-│   ├── index.html
+├── admin/              管理画面（要ログイン / カタログ・クーポンのモード切替あり = 第11.7）
+│   ├── index.html          モードバー＋タブ（種別/商品/生成/一覧/印刷/NE）
 │   ├── js/
-│   │   ├── admin.js        画面制御の本体（一覧・詳細・編集・NE手動投入 等）
-│   │   ├── db.js           Firestore 直アクセス（種別・商品・カード取得、memo保存）
+│   │   ├── admin.js        画面制御の本体（モード切替・一覧・詳細・編集・NE手動投入・クーポン手動発行/スキーマ診断 等）
+│   │   ├── db.js           Firestore 直アクセス（カタログ種別・クーポン種別・商品・カード取得、memo保存）
 │   │   ├── cards-filter.js QR一覧のクライアント側フィルタ（純粋関数・単体テスト対象）
-│   │   └── status.js       neStatus → バッジ表示の変換（純粋関数）
+│   │   └── status.js       neStatus / couponStatus → バッジ表示の変換（純粋関数）
 │   └── css/admin.css
 ├── receive/            受け取り者ページ（ログイン不要）
-│   ├── index.html
-│   ├── js/receive.js       トークン照合〜商品選択〜住所入力〜確定
-│   └── css/receive.css
+│   ├── index.html          カタログ = 商品選択・住所入力（/g/<token>）
+│   ├── coupon.html         ★クーポン = 株主向けコード表示・会員登録導線（/gc/<token> / 第11章）
+│   ├── js/receive.js       カタログ: トークン照合〜商品選択〜住所入力〜確定
+│   ├── js/coupon.js        ★クーポン: トークン照合〜都度発行〜コード表示（/shared 非依存で自己完結）
+│   ├── css/receive.css     カタログ受け取りページ＋共通ベース（クーポンページも読み込む）
+│   └── css/coupon.css      ★クーポンページ固有スタイル
 └── shared/             ★shared/*.js の配信用コピー（git管理下・下記参照）
     ├── constants.js
     ├── expiry.js
     └── delivery.js
 ```
+
+**★kind による受け取り者ページの振り分け**（第11.3）：カタログは `/g/<token>` → `receive/index.html`（既存・無改変）、クーポンは `/gc/<token>` → `receive/coupon.html`（新設）。`firebase.json` の rewrites で分岐し、URL生成（`lib/url.ts` の `buildCardUrl`）も kind で接頭辞を切り替える。
 
 **`shared/` の共有モジュール（最重要の仕組み）**：
 `shared/constants.js` などは、**フロント（ブラウザ）とバックエンド（Functions）の両方が参照する単一情報源（SSOT）**です。
@@ -182,7 +192,7 @@ web/
 - **ブラウザ側**：ブラウザは `../shared` にアクセスできない（Hosting は `web/` しか配信しない）ため、`shared/*.js` を **`web/shared/` にコピー**して配信する。このコピーは `scripts/sync-shared.js` が行う（`shared/` 配下の全 `.js` を自動コピー）。
 - **`web/shared/` は git 管理下に置いている**（`.gitignore` で除外していない）。理由は [8.6](#86-shared資産の配信漏れで受け取り者ページが落ちた事故) の障害対策。**`shared/*.js` を変更したら `node scripts/sync-shared.js` を実行して `web/shared/` を再生成し commit すること。**
 
-**共有される定数（`shared/constants.js`）**：`COLLECTIONS`（コレクション名）/ `CARD_STATUS` / `NE_STATUS` / `NE_MODE` / `TOKEN`（トークン仕様）/ `QR_GENERATION` / `REGION` / `URL_EXPORT` / `NE_FIXED`（NE固定値）/ `EXPIRY_CONTACT` / `PRODUCT` / `PREFECTURES`（47都道府県）/ `DELIVERY`（配達希望の範囲・時間帯）。
+**共有される定数（`shared/constants.js`）**：`COLLECTIONS`（コレクション名）/ `CARD_KIND`（catalog/coupon）/ `DEFAULT_CARD_KIND` / `CARD_STATUS` / `COUPON_STATUS`（issuing/issued）/ `COUPON`（クーポン設定・割引方式・EC URL・コード生成規則 等）/ `NE_STATUS` / `NE_MODE` / `TOKEN`（トークン仕様・`URL_PREFIX`=/g/・`COUPON_URL_PREFIX`=/gc/）/ `QR_GENERATION` / `REGION` / `URL_EXPORT` / `NE_FIXED`（NE固定値）/ `EXPIRY_CONTACT` / `PRODUCT` / `PREFECTURES`（47都道府県）/ `DELIVERY`（配達希望の範囲・時間帯）。
 
 ### 2.5 認証・認可の設計
 
@@ -739,14 +749,16 @@ node scripts/sync-shared.js
 
 - 組織ポリシー（`maru-sin.co.jp`）が `allUsers` 公開を制限しているため、`firebase deploy` の invoker 自動設定は**必ず失敗する**（警告が出る）。
 - **既存関数の更新なら実害なし**（既に public 設定済みのため。警告は無視してよい）。
-- **新規 HTTP 関数を追加したときは、デプロイ後に Cloud Run コンソールで手動「パブリックアクセスを許可」設定が必要**。これをしないとその関数だけ 401 になる。
+- **新規 HTTP 関数を追加したときは、デプロイ後に Cloud Run コンソールで手動「パブリックアクセスを許可」設定が必要**。これをしないとその関数だけ 401（rewrite 未追加なら 404）になる。
 - `invoker:"public"` はコード（`functions/src/http/options.ts` の `HTTP_OPTIONS`）で宣言済みだが、組織ポリシーで反映されないため手動設定が要る。
+- **★あわせて `firebase.json` の hosting rewrites に `/api/<関数名>` を追記**すること（無いと Hosting が 404 を返し関数に届かない。クーポン開発で実際にハマった）。
 
-**現在 public 設定が必要な HTTP 関数（11個）**：
+**現在 public 設定が必要な HTTP 関数（14個）**：
 ```
 adminGenerateGiftCards, receiveGetCard, receiveConfirm, adminExportNeCsv,
 adminRetryNeSubmissions, neCallback, neCallbackTest, adminExportUrlXlsx,
-adminUpdateGiftCard, adminResetGiftCard, adminSetCardExpiry
+adminUpdateGiftCard, adminResetGiftCard, adminSetCardExpiry,
+adminTestIssueCoupon, receiveGetCoupon, receiveClaimCoupon   ← 第11章（クーポン）で追加
 ```
 
 ### 7.4 onSchedule 関数（neAdvanceQueued）は手動public設定「不要」
@@ -913,6 +925,10 @@ adminUpdateGiftCard, adminResetGiftCard, adminSetCardExpiry
   自動初回発行は元の名前のまま。何度再発行しても表記は二重にならず日付が更新される。
 - **発行済みカードも再発行可能**（確認ダイアログで「別クーポンが作られる」旨を警告）。再発行成功で `couponCode` は新コードに更新。
   再発行失敗時は「元が発行済みなら旧コードを保持して発行済みに復元」。
+- **スキーマ診断ツール**（同じ詳細ビューの「スキーマ診断」ボタン＝`adminTestIssueCoupon` の `{introspect:true}` モード）：
+  MakeShop が将来クーポンAPIの仕様を変更して発行が失敗するようになった際に、変更後のフィールド名・enum値・結果型を
+  取得して `makeshop/coupon.ts` を合わせるための**恒久の運用診断ツール**。introspection は本番で無効なため、発行と同じ
+  認証経路でスキーマを取得する（詳細は `docs/coupon-makeshop-api.md`）。
 
 ### 11.7 管理画面の見せ方（タブ分離）
 
@@ -943,6 +959,15 @@ adminUpdateGiftCard, adminResetGiftCard, adminSetCardExpiry
 - 秘匿値 `MAKESHOP_ACCESS_TOKEN` / `MAKESHOP_API_KEY` は Secret Manager に登録（`firebase functions:secrets:set`）。
   `MAKESHOP_API_ENDPOINT` は `functions/.env`。
 - `shared/constants.js` を変更したら `node scripts/sync-shared.js` を実行（[7.2](#72-sharedjs-を変更したときの必須手順事故多発ポイント)）。
+
+### 11.10 データの状態（運用開始時点 / 2026-07-27）
+
+- 開発・検証で作成した **`giftCards`（QRカード）は全件削除**、**クーポン種別（`giftCardTypes` の kind=coupon）も全削除**して
+  クリーンな状態にした（MakeShop 側のテストクーポンも手動削除済み）。したがって運用開始時、`giftCards` は空・クーポン種別は空。
+- **残しているのは本番データ**：カタログ種別（`giftCardTypes` の kind=catalog）と選定可能商品（`selectableProducts`。画像・セット内容・
+  NE商品コードを作り込んだもの）。`neAuth/tokens` 等の設定系も維持。
+- 実運用の**操作手順**は `docs/OPERATION_MANUAL.md`（運用担当者向け）を参照。QR生成→印刷入稿→受注/発行確認→失敗リカバリの
+  日常運用はそちらに集約している。本書（SPECIFICATION）は技術者向けの「なぜ・どう作られているか」に徹する。
 
 ---
 

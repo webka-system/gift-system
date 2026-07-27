@@ -22,6 +22,7 @@
 8. [過去に起きた問題と解決](#8-過去に起きた問題と解決)
 9. [未実装・今後の課題](#9-未実装今後の課題)
 10. [用語集](#10-用語集)
+11. [株主優待クーポン機能（kind=coupon）](#11-株主優待クーポン機能kindcoupon)
 
 ---
 
@@ -842,4 +843,108 @@ adminUpdateGiftCard, adminResetGiftCard, adminSetCardExpiry
 
 ---
 
-*本仕様書は 2026-07-13 時点の実装を正として作成。以後の改修時は本書と `docs/progress.md` を更新してください。*
+## 11. 株主優待クーポン機能（kind=coupon）
+
+> 2026-07 に追加。株主に専用QR付きカードを送り、株主がQRを読むと **その人専用のクーポンコード**が表示され、
+> MakeShop の EC（`otoriyose.site`）で割引に使える。カタログギフト（1〜10章）とは**別物**だが、骨格
+> （QR一括生成→物理カード印刷→トークンURL→受け取り者ページ、ロット、有効期限、管理画面、認証、二重利用防止）は共通。
+> **MakeShop API の実スキーマ詳細は [`docs/coupon-makeshop-api.md`](coupon-makeshop-api.md) が正本。**
+
+### 11.1 抽象化（kind）とデータモデル
+
+ギフトカードに種類 **`kind: "catalog" | "coupon"`** を導入。データモデルは kind で共通のまま、振る舞いと管理画面の
+見せ方だけを分ける。**後方互換：`kind` 未設定は `catalog` とみなす**（既存カタログを壊さない）。定数は `shared/constants.js`
+（`CARD_KIND` / `COUPON_STATUS` / `COUPON`）。
+
+- **`giftCardTypes`**（種別マスタ・単一コレクションの判別ユニオン）：`kind` を追加。
+  - `catalog`：`price` / `cardProductCode`（＋子 `selectableProducts`）。
+  - `coupon`：`couponConfig`（`discountType`:"amount"/"rate" ・`discountValue`・`minimumPrice?`）。会員限定・お一人様1回・
+    全商品は**確定仕様**なので定数（`COUPON`）側に固定し、種別には割引方式・額だけ持たせる。有効期限は種別に持たない（下記）。
+  - ※ `listCardTypes()` は `orderBy("price")` のため price を持たないクーポン種別は返らない＝カタログ一覧は自動的に catalog のみ。
+- **`giftCards`**：`kind` を生成時にデノーマライズ。クーポン用フィールドを追加：
+  - `couponExpiryAt`（Timestamp・**ロット単位の絶対日付**。QR/クーポン有効期限を兼ねる）
+  - `couponStatus`（`"issuing"`=発行中claim中間 / `"issued"`=発行済。未設定=未発行）
+  - `couponCode` / `couponIssuedAt` / `couponLastError` / `couponAttempts`
+
+### 11.2 有効期限（ロット単位の絶対日付）
+
+株主優待は**期ごとに期限が変わる**ため、割引内容は種別に固定し、**有効期限はQR生成（ロット）のたびに絶対日付で指定**する。
+生成時に各カードへ `couponExpiryAt`（JST その日の 23:59:59）を焼き込み、**受け取り者ページの期限ゲート**と
+**MakeShop `endedAt`** の両方に使う。カタログの相対日数期限（`expiryDays`）とは別系統。
+
+### 11.3 URL 振り分け（カタログを触らず kind で分離）
+
+- catalog：`/g/<token>` → `/receive/index.html`（**既存・無改変**）。
+- coupon ：`/gc/<token>` → `/receive/coupon.html`（新設）。
+- `TOKEN.COUPON_URL_PREFIX="/gc/"`。URL生成（`lib/url.ts` の `buildCardUrl` / 管理画面 `receiveUrl` / 印刷Excel）は kind 対応。
+- `firebase.json` に rewrite 追加：`/gc/**` → coupon.html（`/g/**` より前）、`/api/receiveGetCoupon`、`/api/receiveClaimCoupon`。
+
+### 11.4 都度発行フローと二重発行防止
+
+株主の初回アクセスで **MakeShop `createCoupon` を1件発行**しコードを保存。2回目以降は保存済みコードを表示するだけ（API不使用）。
+
+- **HTTP関数**（`http/receive-coupon.ts`）：
+  - `receiveGetCoupon`（GET）：状態（`issued`/`ready`/`issuing`/`expired`）＋割引・有効期限・ECリンクを返す（副作用なし）。
+  - `receiveClaimCoupon`（POST）：発行本体。MakeShop秘匿値を注入。
+- **二重発行防止**：`makeshop/issue.ts` の `issueCouponForCard` が**トランザクションで claim**（`couponStatus="issuing"` を原子的に確保）
+  してから MakeShop を叩く（既存カタログ NE の `trySubmitCard` と同じパターン）。連打・再送・同時アクセスで2個発行されない。
+- **成功**：`status="used"`＋`couponStatus="issued"`＋`couponCode` 保存。
+- **失敗**：未発行のまま（`couponStatus` クリア）＋`couponLastError` 記録。株主にはリトライ可能表示。再アクセスで再試行。
+- **期限切れゲート**：`couponExpiryAt` を過ぎたカードは発行しない（`expired`）。
+- コードは gift-system 側で**ランダム生成**（小文字英数32字種16桁。MakeShop制約=半角英数20字以内・大小区別なし）。
+  重複（`status:FAIL`）ならコード再生成でリトライ。
+
+### 11.5 MakeShop 連携（要点。詳細は coupon-makeshop-api.md）
+
+- 固定トークン方式（無期限・ローテーション不要）。ヘッダー：`authorization: Bearer <ACCESS_TOKEN>` / `x-api-key: <API_KEY>` /
+  `x-timestamp: <UNIX秒>` / `content-type: application/json`。エンドポイント `https://app-api.makeshop.jp/v1/graphql`。
+- 入力は **`createCoupon(input:{ coupons: [CreateCoupon] })`** の**配列**。各 `CreateCoupon` に
+  `code`/`name`(必須)/`isEnabled`/`isForOnlyMember`/`hasMaximumMemberUsableCount`+`maximumMemberUsableCount`/
+  `hasTotalUseCount`+`totalUseCount`/`hasMinimumPrice`+`minimumPrice`/`isTargetProduct`/
+  `discountType`(FIXED_AMOUNT/FIXED_RATE/FREE_DELIVERY_FEE)/`fixedAmount`/`fixedRate`/`hasPeriod`+`startedAt`+`endedAt`。
+- 日付書式 **`YYYY-MM-DD HH:mm:ss`**（JST）。レスポンスは **`results[0].{code,name,status,errorMessage}`**、`status` は **`SUCCESS`/`FAIL`**。
+- **★introspection は本番で無効（FORBIDDEN）**。スキーマ変更時はエラーメッセージ or 公式SpectaQL静的HTMLから確定。
+  **`useCountType` は実在しない**（利用回数は `has...`フラグ＋数値で表す）が最大のハマりどころ。
+
+### 11.6 手動発行 / 再発行（管理画面）
+
+- クーポンカードの**詳細ビュー**から手動発行/再発行できる（`adminTestIssueCoupon`。恒久機能）。二重発行防止の claim は維持。
+- **管理画面からの手動発行は名前に `【再発行 M/D】`（JST）を付ける**（`makeshop/coupon.ts` の `reissueName`）。受け取り者の
+  自動初回発行は元の名前のまま。何度再発行しても表記は二重にならず日付が更新される。
+- **発行済みカードも再発行可能**（確認ダイアログで「別クーポンが作られる」旨を警告）。再発行成功で `couponCode` は新コードに更新。
+  再発行失敗時は「元が発行済みなら旧コードを保持して発行済みに復元」。
+
+### 11.7 管理画面の見せ方（タブ分離）
+
+カタログとクーポンを**取り扱いモード（`カタログギフト` / `株主優待クーポン`）で完全分離**（混在をやめる）。
+データモデルは kind で共通のまま、見せ方だけ分ける（`#app-view[data-mode]`）。
+
+- 種別・QR生成・QR一覧・印刷は**現在モードの kind に限定**（カタログモードでクーポン種別を選べない＝誤生成防止）。
+- 選定可能商品・NE連携タブはクーポンモードでは非表示（カタログ専用）。
+- 印刷Excel（`adminExportUrlXlsx`）に `kind` フィルタを追加（「すべての種別」でも他種類が混ざらない）。
+- **クーポン状態バッジ**（`status.js` の `couponStatusInfo`）：未発行/発行済/**発行失敗（赤・目立たせる）**。詳細ビューで
+  `couponCode`/発行日時/状態/`couponLastError` を確認できる。
+
+### 11.8 受け取り者ページ（株主向け / `/receive/coupon.html`）
+
+スマホ最優先。カタログ受け取りページ（`receive.js`）とは**完全に別物**で、`/shared` の外部モジュールに依存しない自己完結
+（注文の生命線ページを配信漏れで落とさないため。[8.6](#86-shared資産の配信漏れで受け取り者ページが落ちた事故) の教訓）。
+
+- クーポンコードを大きく表示＋コピーボタン、割引・有効期限、店舗ヘッダー/フッター（カタログと共通）。
+- **会員登録導線**（狙い＝会員登録の促進）：①会員登録（専用URL `otoriyose.site/html/page80.html`）→②商品を選ぶ→
+  ③カゴでコード入力。EC本体リンクは `otoriyose.site/`。
+- 状態別表示：発行中ローディング / 発行済（コード） / 期限切れ / 発行失敗（リトライ） / 無効。
+
+### 11.9 デプロイ・運用上の注意（クーポン固有）
+
+- **新規HTTP関数**（`adminTestIssueCoupon` / `receiveGetCoupon` / `receiveClaimCoupon`）は、**デプロイ後に Cloud Run で手動
+  「パブリックアクセスを許可」**が必要（組織ポリシーで invoker 自動設定が失敗。[7.3](#73-新規http関数を追加したときのcloud-run手動public設定) と同じ）。
+  さらに **`firebase.json` に rewrite 追記**も必須（`/api/<関数名>`。無いと Hosting が 404 を返し関数に届かない）。
+- 秘匿値 `MAKESHOP_ACCESS_TOKEN` / `MAKESHOP_API_KEY` は Secret Manager に登録（`firebase functions:secrets:set`）。
+  `MAKESHOP_API_ENDPOINT` は `functions/.env`。
+- `shared/constants.js` を変更したら `node scripts/sync-shared.js` を実行（[7.2](#72-sharedjs-を変更したときの必須手順事故多発ポイント)）。
+
+---
+
+*本仕様書は 2026-07-13 時点のカタログ実装を正として作成し、2026-07-27 に株主優待クーポン機能（第11章）を追記。
+以後の改修時は本書・[`docs/coupon-makeshop-api.md`](coupon-makeshop-api.md)・`docs/progress.md` を更新してください。*

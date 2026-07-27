@@ -11,7 +11,7 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 import { FieldValue } from "firebase-admin/firestore";
-import { URL_EXPORT } from "../config/constants";
+import { URL_EXPORT, CARD_KIND, DEFAULT_CARD_KIND } from "../config/constants";
 import { HTTP_OPTIONS } from "./options";
 import { publicHostingOrigin } from "../config/env";
 import { db, giftCardsRef, giftCardTypesRef } from "../lib/firestore";
@@ -51,6 +51,9 @@ export const adminExportUrlXlsx = onRequest(HTTP_OPTIONS, async (req, res) => {
   if (!admin) return;
 
   const cardTypeId = typeof req.query.cardTypeId === "string" ? req.query.cardTypeId.trim() : "";
+  // kind フィルタ（catalog / coupon）。管理画面のモードに対応。指定時はその種類のカードだけ出力する
+  //（「すべての種別」でも他方の種類が混ざらないように）。未指定は従来どおり種類で絞らない。
+  const kind = typeof req.query.kind === "string" ? req.query.kind.trim() : "";
   const batchId = typeof req.query.batchId === "string" ? req.query.batchId.trim() : "";
   const generatedDate = typeof req.query.generatedDate === "string" ? req.query.generatedDate.trim() : "";
   // 生成日の範囲（JST・YYYY-MM-DD）。ロットが増えても期間指定で対象を絞れる。
@@ -77,6 +80,10 @@ export const adminExportUrlXlsx = onRequest(HTTP_OPTIONS, async (req, res) => {
     // メモリ側フィルタ: ロット不明（batchId 無し）／生成日(JST)の一致・範囲。
     // 後方互換で generatedAt 無しのカードは、生成日の一致/範囲フィルタには含めない（不明ロットで拾う）。
     if (batchId === LOT_NONE) docs = docs.filter((d) => !d.data().batchId);
+    // kind（catalog/coupon）で絞る。kind 未設定の既存カードは catalog 扱い（後方互換）。
+    if (kind === CARD_KIND.CATALOG || kind === CARD_KIND.COUPON) {
+      docs = docs.filter((d) => (d.data().kind ?? DEFAULT_CARD_KIND) === kind);
+    }
     if (generatedDate) docs = docs.filter((d) => genDateJst(d.data().generatedAt) === generatedDate);
     if (generatedFrom) docs = docs.filter((d) => { const g = genDateJst(d.data().generatedAt); return g !== null && g >= generatedFrom; });
     if (generatedTo) docs = docs.filter((d) => { const g = genDateJst(d.data().generatedAt); return g !== null && g <= generatedTo; });

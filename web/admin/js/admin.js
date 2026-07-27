@@ -144,14 +144,46 @@ $("#login-form").addEventListener("submit", async (e) => {
 
 $("#logout-btn").addEventListener("click", () => logout());
 
+// 取り扱いモード（catalog / coupon）。カタログギフトと株主優待クーポンを混在させず上位で分ける。
+let currentMode = "catalog";
+/** 現在モードの kind（一覧・生成・印刷の対象種類）。 */
+function modeKind() { return currentMode === "coupon" ? CARD_KIND.COUPON : CARD_KIND.CATALOG; }
+
+// タブを開く（アクティブ化＋データ取得）。クリックとモード切替の両方から使う。
+function activateTab(tab) {
+  $$(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  $$(".tab-panel").forEach((p) => { p.hidden = p.id !== `tab-${tab}`; });
+  loadTab(tab);
+}
+
 // タブ切替。切り替えたら、そのタブのデータ取得を自動で開始する（開いたら勝手に最新が出る挙動に統一）。
 $$(".tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const tab = btn.dataset.tab;
-    $$(".tab-btn").forEach((b) => b.classList.toggle("active", b === btn));
-    $$(".tab-panel").forEach((p) => { p.hidden = p.id !== `tab-${tab}`; });
-    loadTab(tab);
-  });
+  btn.addEventListener("click", () => activateTab(btn.dataset.tab));
+});
+
+/**
+ * 取り扱いモードを切り替える（カタログギフト / 株主優待クーポン）。
+ * タブの見せ方（カタログ専用タブの表示/非表示・種別タブのラベル）と、
+ * 一覧/生成/印刷の対象 kind を切り替える。データモデルは kind で共通のまま、見せ方だけ分ける。
+ */
+function setMode(mode) {
+  currentMode = mode;
+  const app = $("#app-view");
+  if (app) app.dataset.mode = mode;
+  $$(".mode-btn").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+  // カタログ専用タブ（選定可能商品・NE連携）はクーポンモードでは隠す。
+  $$(".tab-btn[data-catalog-only]").forEach((b) => { b.hidden = mode !== "catalog"; });
+  // 種別タブのラベルをモードに合わせて切替。
+  const typesBtn = $('.tab-btn[data-tab="types"]');
+  if (typesBtn) typesBtn.textContent = mode === "coupon" ? typesBtn.dataset.labelCoupon : typesBtn.dataset.labelCatalog;
+  // 現在アクティブなタブが隠れた（カタログ専用→クーポンで消えた）ら、種別タブへ退避。
+  let active = $(".tab-btn.active");
+  if (!active || active.hidden) active = typesBtn;
+  activateTab(active ? active.dataset.tab : "types");
+}
+
+$$(".mode-btn").forEach((btn) => {
+  btn.addEventListener("click", () => setMode(btn.dataset.mode));
 });
 
 /**
@@ -179,7 +211,7 @@ async function bootApp() {
   if (booted) return;
   booted = true;
   wireForms();
-  await renderCardTypes();
+  setMode("catalog"); // 既定はカタログ。種別タブを開いて初期描画する。
 }
 
 // ============================================================
@@ -441,6 +473,8 @@ async function onExportUrlXlsx() {
   busy($("#print-result"), "Excel生成中…");
   try {
     const params = new URLSearchParams();
+    // 現在モードの kind を渡し、「すべての種別」でも他方の種類が混ざらないようにする。
+    params.set("kind", modeKind());
     const typeId = $("#print-type-select").value;
     if (typeId) params.set("cardTypeId", typeId);
     const lot = $("#print-lot-select").value;
@@ -473,30 +507,40 @@ async function onExportUrlXlsx() {
 }
 
 // 種別セレクタ（商品・QR生成・一覧）を最新の種別で埋める。
+/** 種別セレクタの表示ラベル接尾辞（catalog=価格 / coupon=割引内容）。 */
+function typeOptionSuffix(t) {
+  return currentMode === "coupon" ? `（${couponDiscountText(t.couponConfig)}）` : `（${yen(t.price)}）`;
+}
+
 function refreshTypeSelectors() {
-  // 商品/一覧/印刷の種別セレクタは従来通り catalog 種別のみ（無改変）。
-  // ※クーポンカードも一覧に出るが、種別フィルタは「すべての種別」で拾える。専用の kind フィルタは後続フェーズ。
-  for (const sel of ["#product-type-select", "#cards-type-select", "#print-type-select"]) {
+  // 現在モードの種別（catalog種別 or クーポン種別）。混在させない。
+  const modeTypes = currentMode === "coupon" ? couponTypesCache : cardTypesCache;
+
+  // 商品タブは常にカタログ種別（選定可能商品はカタログ専用）。
+  const psel = $("#product-type-select");
+  if (psel) {
+    const prev = psel.value;
+    psel.innerHTML = cardTypesCache.map((t) => `<option value="${t.id}">${esc(t.name)}（${yen(t.price)}）</option>`).join("");
+    if (prev) psel.value = prev;
+  }
+
+  // 一覧・印刷の種別フィルタは現在モードの種別（＋すべて）。
+  for (const sel of ["#cards-type-select", "#print-type-select"]) {
     const el = $(sel);
     if (!el) continue;
     const prev = el.value;
-    const isFilter = sel === "#cards-type-select" || sel === "#print-type-select";
-    el.innerHTML = (isFilter ? `<option value="">すべての種別</option>` : "") +
-      cardTypesCache.map((t) => `<option value="${t.id}">${esc(t.name)}（${yen(t.price)}）</option>`).join("");
+    el.innerHTML = `<option value="">すべての種別</option>` +
+      modeTypes.map((t) => `<option value="${t.id}">${esc(t.name)}${typeOptionSuffix(t)}</option>`).join("");
     if (prev) el.value = prev;
   }
 
-  // 生成セレクタは catalog＋coupon の両方を出す（kind で有効期限UIを出し分けるため data-kind を付与）。
+  // 生成セレクタも現在モードの種別のみ（data-kind でクーポン時の有効期限UIを出し分け）。
   const gsel = $("#generate-type-select");
   if (gsel) {
     const prev = gsel.value;
-    const catalogOpts = cardTypesCache
-      .map((t) => `<option value="${t.id}" data-kind="${CARD_KIND.CATALOG}">${esc(t.name)}（${yen(t.price)}）</option>`)
+    gsel.innerHTML = modeTypes
+      .map((t) => `<option value="${t.id}" data-kind="${modeKind()}">${esc(t.name)}${typeOptionSuffix(t)}</option>`)
       .join("");
-    const couponOpts = couponTypesCache
-      .map((t) => `<option value="${t.id}" data-kind="${CARD_KIND.COUPON}">${esc(t.name)}（クーポン）</option>`)
-      .join("");
-    gsel.innerHTML = catalogOpts + couponOpts;
     if (prev) gsel.value = prev;
     syncGenerateExpiryField();
   }
@@ -907,15 +951,21 @@ function cardGenDateJst(c) {
   return `${j.getUTCFullYear()}-${String(j.getUTCMonth() + 1).padStart(2, "0")}-${String(j.getUTCDate()).padStart(2, "0")}`;
 }
 
-/** QR一覧のロット絞り込みを取得済みカードから最新化する。 */
+/** カードを現在モードの kind に絞る（catalog/coupon の混在を避ける）。 */
+function filterByMode(cards) {
+  const mk = modeKind();
+  return cards.filter((c) => (c.kind ?? CARD_KIND.CATALOG) === mk);
+}
+
+/** QR一覧のロット絞り込みを取得済みカードから最新化する（現在モードのカードのみ）。 */
 function populateLotFilter() {
   const sel = $("#cards-lot-select");
   const prev = sel.value;
-  sel.innerHTML = lotOptionsHtml(cardsCache);
+  sel.innerHTML = lotOptionsHtml(filterByMode(cardsCache));
   if (prev) sel.value = prev;
 }
 
-/** 印刷タブのロット絞り込みを、選択中の種別のカードから組み立てる。 */
+/** 印刷タブのロット絞り込みを、選択中の種別のカードから組み立てる（現在モードのカードのみ）。 */
 async function populatePrintLots() {
   const sel = $("#print-lot-select");
   if (!sel) return;
@@ -923,7 +973,7 @@ async function populatePrintLots() {
   const cardTypeId = $("#print-type-select").value || undefined;
   let cards = [];
   try { cards = await listCards({ cardTypeId }); } catch (_) { /* 空で続行 */ }
-  sel.innerHTML = lotOptionsHtml(cards);
+  sel.innerHTML = lotOptionsHtml(filterByMode(cards));
   if (prev) sel.value = prev;
 }
 
@@ -988,7 +1038,12 @@ function applyCardFilters() {
   const genFrom = $("#cards-gen-from").value;
   const genTo = $("#cards-gen-to").value;
 
-  let rows = filterCards(cardsCache, { neStatus, batchId, query });
+  // ★現在モード（カタログ / クーポン）の kind だけに絞る（混在一覧をやめる）。
+  //   kind 未設定の既存カードは catalog 扱い（後方互換）。
+  const mk = modeKind();
+  const modeCards = cardsCache.filter((c) => (c.kind ?? CARD_KIND.CATALOG) === mk);
+
+  let rows = filterCards(modeCards, { neStatus, batchId, query });
   // 生成日の範囲（JST）で絞り込み。ロットが増えても期間指定で対象を絞れる。generatedAt 無しは範囲対象外。
   if (genFrom) rows = rows.filter((c) => { const d = cardGenDateJst(c); return d !== null && d >= genFrom; });
   if (genTo) rows = rows.filter((c) => { const d = cardGenDateJst(c); return d !== null && d <= genTo; });
@@ -996,13 +1051,13 @@ function applyCardFilters() {
   if (expiryFilter === "expired") rows = rows.filter((c) => cardExpiry(c).expired);
   else if (expiryFilter === "near") rows = rows.filter((c) => { const v = cardExpiry(c); return !v.expired && v.near; });
 
-  $("#cards-count").textContent = cardsCache.length
-    ? `${rows.length} / ${cardsCache.length} 件`
+  $("#cards-count").textContent = modeCards.length
+    ? `${rows.length} / ${modeCards.length} 件`
     : "";
 
   tbody.innerHTML = "";
   if (rows.length === 0) {
-    tableEmpty(tbody, 7, cardsCache.length === 0
+    tableEmpty(tbody, 7, modeCards.length === 0
       ? "該当するカードがありません。"
       : "検索・絞り込み条件に一致するカードがありません。");
     return;

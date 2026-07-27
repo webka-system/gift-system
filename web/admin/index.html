@@ -28,7 +28,7 @@
   </section>
 
   <!-- ===== アプリ本体 ===== -->
-  <section id="app-view" hidden>
+  <section id="app-view" data-mode="catalog" hidden>
     <header class="app-header">
       <h1>gift-system 管理画面</h1>
       <div class="header-right">
@@ -37,59 +37,69 @@
       </div>
     </header>
 
+    <!-- 取り扱いモード（カタログギフト / 株主優待クーポン）。混在を避けるため上位で明確に分ける。 -->
+    <div class="mode-switch" role="tablist" aria-label="取り扱いモード">
+      <button class="mode-btn active" data-mode="catalog" type="button">カタログギフト</button>
+      <button class="mode-btn" data-mode="coupon" type="button">株主優待クーポン</button>
+    </div>
+
     <nav class="tabs">
-      <button class="tab-btn active" data-tab="types">カード種別</button>
-      <button class="tab-btn" data-tab="products">選定可能商品</button>
+      <button class="tab-btn active" data-tab="types" data-label-catalog="カード種別" data-label-coupon="クーポン種別">カード種別</button>
+      <button class="tab-btn" data-tab="products" data-catalog-only>選定可能商品</button>
       <button class="tab-btn" data-tab="generate">QR生成</button>
       <button class="tab-btn" data-tab="cards">QR一覧</button>
       <button class="tab-btn" data-tab="print">印刷</button>
-      <button class="tab-btn" data-tab="ne">NE連携</button>
+      <button class="tab-btn" data-tab="ne" data-catalog-only>NE連携</button>
     </nav>
 
     <main class="app-body">
-      <!-- カード種別 -->
+      <!-- 種別（カタログ / クーポンをモードで出し分け） -->
       <section id="tab-types" class="tab-panel">
-        <h2>カード種別</h2>
-        <table class="data-table">
-          <thead><tr><th>表示名</th><th>価格帯</th><th>管理商品コード</th><th>状態</th><th></th></tr></thead>
-          <tbody id="types-tbody"></tbody>
-        </table>
+        <!-- ===== カタログ種別 ===== -->
+        <div class="mode-catalog">
+          <h2>カード種別（カタログギフト）</h2>
+          <table class="data-table">
+            <thead><tr><th>表示名</th><th>価格帯</th><th>管理商品コード</th><th>状態</th><th></th></tr></thead>
+            <tbody id="types-tbody"></tbody>
+          </table>
 
-        <h3>種別の登録 / 編集</h3>
-        <form id="type-form" class="form-grid">
-          <input id="type-id" type="hidden" />
-          <label><span>表示名<span class="req-chip">必須</span></span><input id="type-name" type="text" placeholder="3万円ギフトカード" required /></label>
-          <label><span>価格帯（円）<span class="req-chip">必須</span></span><input id="type-price" type="number" min="0" step="1" placeholder="30000" required /></label>
-          <label><span>ギフトカード管理商品コード<span class="opt-chip">任意</span></span><input id="type-code" type="text" placeholder="CARD-30000" /></label>
-          <label><span>有効期限（日数・空欄で無期限）<span class="opt-chip">任意</span></span><input id="type-expiry" type="number" min="1" step="1" placeholder="例: 90" /></label>
-          <button id="type-submit" type="submit">種別を登録</button>
-        </form>
+          <h3>種別の登録 / 編集</h3>
+          <form id="type-form" class="form-grid">
+            <input id="type-id" type="hidden" />
+            <label><span>表示名<span class="req-chip">必須</span></span><input id="type-name" type="text" placeholder="3万円ギフトカード" required /></label>
+            <label><span>価格帯（円）<span class="req-chip">必須</span></span><input id="type-price" type="number" min="0" step="1" placeholder="30000" required /></label>
+            <label><span>ギフトカード管理商品コード<span class="opt-chip">任意</span></span><input id="type-code" type="text" placeholder="CARD-30000" /></label>
+            <label><span>有効期限（日数・空欄で無期限）<span class="opt-chip">任意</span></span><input id="type-expiry" type="number" min="1" step="1" placeholder="例: 90" /></label>
+            <button id="type-submit" type="submit">種別を登録</button>
+          </form>
+        </div>
 
         <!-- ===== クーポン種別（株主優待 / kind=coupon）===== -->
-        <hr class="section-sep" />
-        <h2>クーポン種別（株主優待）</h2>
-        <p class="muted small">株主優待クーポン用の種別です。割引内容だけを設定します（商品選定・住所入力・NEは使いません）。<strong>会員限定・お一人様1回・対象=全商品</strong>は固定仕様です。有効期限は<strong>QR生成のたびに絶対日付で指定</strong>します（期ごとに期限が変わるため）。</p>
-        <table class="data-table">
-          <thead><tr><th>表示名</th><th>割引</th><th>最低購入額</th><th>状態</th><th></th></tr></thead>
-          <tbody id="coupon-types-tbody"></tbody>
-        </table>
+        <div class="mode-coupon">
+          <h2>クーポン種別（株主優待）</h2>
+          <p class="muted small">株主優待クーポン用の種別です。割引内容だけを設定します（商品選定・住所入力・NEは使いません）。<strong>会員限定・お一人様1回・対象=全商品</strong>は固定仕様です。有効期限は<strong>QR生成のたびに絶対日付で指定</strong>します（期ごとに期限が変わるため）。</p>
+          <table class="data-table">
+            <thead><tr><th>表示名</th><th>割引</th><th>最低購入額</th><th>状態</th><th></th></tr></thead>
+            <tbody id="coupon-types-tbody"></tbody>
+          </table>
 
-        <h3>クーポン種別の登録 / 編集</h3>
-        <form id="coupon-type-form" class="form-grid">
-          <input id="coupon-type-id" type="hidden" />
-          <label><span>表示名<span class="req-chip">必須</span></span><input id="coupon-type-name" type="text" placeholder="株主優待10%OFF" required /></label>
-          <label><span>割引方式<span class="req-chip">必須</span></span>
-            <select id="coupon-type-discount-type">
-              <option value="rate">割引率（%）</option>
-              <option value="amount">割引額（円）</option>
-            </select>
-          </label>
-          <label><span><span id="coupon-type-value-label">割引率（%）</span><span class="req-chip">必須</span></span><input id="coupon-type-value" type="number" min="1" step="1" placeholder="10" required /></label>
-          <label><span>最低購入額（円・空欄で下限なし）<span class="opt-chip">任意</span></span><input id="coupon-type-min" type="number" min="1" step="1" placeholder="例: 3000" /></label>
-          <p class="muted small wide">固定設定：会員限定＝ON／利用回数＝お一人様1回（UENUCT4）／対象＝全商品。</p>
-          <button id="coupon-type-submit" type="submit">クーポン種別を登録</button>
-          <button id="coupon-type-cancel" type="button" class="ghost" hidden>編集をやめる</button>
-        </form>
+          <h3>クーポン種別の登録 / 編集</h3>
+          <form id="coupon-type-form" class="form-grid">
+            <input id="coupon-type-id" type="hidden" />
+            <label><span>表示名<span class="req-chip">必須</span></span><input id="coupon-type-name" type="text" placeholder="株主優待10%OFF" required /></label>
+            <label><span>割引方式<span class="req-chip">必須</span></span>
+              <select id="coupon-type-discount-type">
+                <option value="rate">割引率（%）</option>
+                <option value="amount">割引額（円）</option>
+              </select>
+            </label>
+            <label><span><span id="coupon-type-value-label">割引率（%）</span><span class="req-chip">必須</span></span><input id="coupon-type-value" type="number" min="1" step="1" placeholder="10" required /></label>
+            <label><span>最低購入額（円・空欄で下限なし）<span class="opt-chip">任意</span></span><input id="coupon-type-min" type="number" min="1" step="1" placeholder="例: 3000" /></label>
+            <p class="muted small wide">固定設定：会員限定＝ON／利用回数＝お一人様1回／対象＝全商品。</p>
+            <button id="coupon-type-submit" type="submit">クーポン種別を登録</button>
+            <button id="coupon-type-cancel" type="button" class="ghost" hidden>編集をやめる</button>
+          </form>
+        </div>
       </section>
 
       <!-- 選定可能商品 -->

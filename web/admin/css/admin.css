@@ -288,14 +288,17 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .table-scroll { overflow-x: auto; }
 /* 一覧は要点だけに絞ったので、通常のPC/10インチ画面（コンテンツ幅≈960px）では横スクロールなしで収まる。
    min-width は極端に狭い画面のための下限（それ未満のときだけ .table-scroll が働く）。 */
-.cards-table { table-layout: fixed; width: 100%; min-width: 720px; }
-.cards-table .col-gen { width: 150px; }
-.cards-table .col-status { width: 148px; }
-.cards-table .col-type { width: 100px; }
-.cards-table .col-name { width: auto; }
-.cards-table .col-used { width: 122px; }
-.cards-table .col-memo { width: 140px; }
-.cards-table .col-actions { width: 160px; }
+/* 種別名が読めるよう col-type を可変（残り幅を吸収＝最も広い）にし、他列は詰める。
+   級数と余白も少し詰めて情報密度を上げる（横スクロールを出さない範囲で全体バランス調整）。 */
+.cards-table { table-layout: fixed; width: 100%; min-width: 880px; font-size: .82rem; }
+.cards-table th, .cards-table td { padding: .55rem .55rem; }
+.cards-table .col-gen { width: 112px; }
+.cards-table .col-status { width: 150px; }
+.cards-table .col-type { width: auto; }   /* ★種別名: 残り幅を割り当てて最も広く（省略されにくく） */
+.cards-table .col-name { width: 112px; }
+.cards-table .col-used { width: 98px; }
+.cards-table .col-memo { width: 112px; }
+.cards-table .col-actions { width: 148px; }
 /* 生成/有効期限セルの期限行の色（切れ＝赤、間近＝橙）。 */
 .cards-table .expiry-over { color: var(--danger); font-weight: 600; }
 .cards-table .expiry-near { color: #b45309; }

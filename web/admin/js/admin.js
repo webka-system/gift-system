@@ -1300,17 +1300,20 @@ function couponDetailHtml(card) {
     ? `<div class="ne-warn">⚠ 直近の発行エラー: ${esc(card.couponLastError)}</div>` : "";
 
   let action, note;
-  if (issued) {
-    action = "";
-    note = `<p class="muted small">発行済みです（お一人様1回・会員限定）。二重発行防止のため、ここからは再発行できません。</p>`;
-  } else if (issuing) {
+  if (issuing) {
     action = "";
     note = `<p class="muted small">発行処理中の状態です。少し待ってから詳細を開き直してください。</p>`;
+  } else if (issued) {
+    // 発行済みでも管理者は再発行できる（MakeShop に別クーポンが作られる）。目立つ危険色＋警告確認。
+    action = `<div class="detail-ops"><button data-act="coupon-issue" type="button" class="danger-btn">クーポンを再発行</button></div>`;
+    note = `<p class="muted small">発行済みです。<strong>再発行</strong>すると MakeShop 側に<strong>別のクーポン</strong>が作られ、
+      表示コードは新しいものに置き換わります（名前に【再発行 M/D】が付きます）。トラブル対応など必要な場合のみ実行してください。</p>`;
   } else {
-    const label = card.couponLastError ? "クーポンを再発行" : "クーポンをテスト発行";
+    // 未発行（初回 or 発行失敗）。管理画面からの手動発行。
+    const label = card.couponLastError ? "クーポンを再発行" : "クーポンを発行";
     action = `<div class="detail-ops"><button data-act="coupon-issue" type="button">${label}</button></div>`;
     note = `<p class="muted small">押すと<strong>実際に MakeShop へクーポンを1件発行</strong>します（確認ダイアログあり）。
-      成功なら発行コードを表示し、失敗なら MakeShop の応答（raw）をそのまま表示します。</p>`;
+      管理画面からの手動発行は名前に<strong>【再発行 M/D】</strong>が付きます。成功なら発行コードを表示、失敗なら MakeShop の応答（raw）を表示します。</p>`;
   }
 
   return `
@@ -1537,11 +1540,12 @@ async function onIssueCoupon(btn) {
   if (!id) return;
   const card = cardsCache.find((c) => c.id === id);
   if (!card) return;
-  if (card.couponStatus === COUPON_STATUS.ISSUED) {
-    flash("このカードは既にクーポン発行済みです（二重発行防止）。", "error");
-    return;
-  }
-  if (!confirm("実際に MakeShop へクーポンを1件発行します。よろしいですか？")) return;
+  // 発行済みカードの再発行は、別クーポンが作られる旨を明示して確認する。
+  const isReissue = card.couponStatus === COUPON_STATUS.ISSUED;
+  const msg = isReissue
+    ? "既にクーポン発行済みです。再発行しますか？\nMakeShop 側に別のクーポンが作られ、表示コードは新しいものに置き換わります（名前に【再発行 M/D】が付きます）。"
+    : "実際に MakeShop へクーポンを1件発行します。よろしいですか？\n（管理画面からの手動発行は名前に【再発行 M/D】が付きます）";
+  if (!confirm(msg)) return;
 
   const resultEl = $("#coupon-result");
   btn.disabled = true;

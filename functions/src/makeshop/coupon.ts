@@ -80,6 +80,19 @@ export interface CreateCouponResult {
 }
 
 /**
+ * 再発行時のクーポン名に「【再発行 M/D】」（JST の月/日）を付ける。
+ *   - 元の種別名（クリーンな名前）から作るので二重には付かないが、念のため既存の【再発行…】を除去してから付ける
+ *     （何度再発行しても表記が二重にならず、日付が最新に更新される）。
+ *   - 初回発行（受け取り者の自動発行）では付けない。管理画面からの手動発行/再発行のときだけ付ける。
+ */
+export function reissueName(baseName: string, nowMs: number): string {
+  const j = new Date(nowMs + 9 * 60 * 60 * 1000);
+  const md = `${j.getUTCMonth() + 1}/${j.getUTCDate()}`;
+  const clean = baseName.replace(/\s*【再発行[^】]*】\s*$/, "");
+  return `${clean}【再発行 ${md}】`;
+}
+
+/**
  * ランダムなクーポンコードを生成する。
  * MakeShop 制約: 半角英数字20文字以内・大小区別なし → 実効32字種（COUPON.CODE.ALPHABET）で LENGTH 桁。
  * 推測困難性のため crypto の乱数を使う（Math.random は使わない）。

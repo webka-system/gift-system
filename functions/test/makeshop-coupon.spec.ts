@@ -7,7 +7,7 @@
 
 import * as assert from "node:assert";
 import { makeshopGraphql } from "../src/makeshop/client";
-import { generateCouponCode, createCouponRaw, createCouponWithRetry } from "../src/makeshop/coupon";
+import { generateCouponCode, createCouponRaw, createCouponWithRetry, reissueName } from "../src/makeshop/coupon";
 import { COUPON } from "../src/config/constants";
 
 // 環境変数（エンドポイント＋固定資格情報）をテスト用に用意する。
@@ -77,6 +77,22 @@ describe("makeshopGraphql（固定トークンのヘッダー付与）", () => {
     const resp = await makeshopGraphql("q", {}, { fetchFn: async () => ({ ok: true, status: 200, async text() { return "{}"; } }) });
     assert.strictEqual(resp.ok, false);
     assert.match(resp.diagnostics.bodyText, /MAKESHOP_API_ENDPOINT/);
+  });
+});
+
+describe("reissueName（再発行時の【再発行 M/D】付与）", () => {
+  // 2027-07-24 12:00 JST = 2027-07-24 03:00 UTC
+  const JUL24 = Date.UTC(2027, 6, 24, 3, 0, 0);
+  it("元の名前に【再発行 M/D】(JST)を付ける", () => {
+    assert.strictEqual(reissueName("株主優待10%OFF", JUL24), "株主優待10%OFF【再発行 7/24】");
+  });
+  it("既に【再発行 …】が付いていれば二重にせず日付を更新する", () => {
+    assert.strictEqual(reissueName("株主優待10%OFF【再発行 3/1】", JUL24), "株主優待10%OFF【再発行 7/24】");
+    assert.strictEqual(reissueName("株主優待10%OFF 【再発行 3/1】", JUL24), "株主優待10%OFF【再発行 7/24】");
+  });
+  it("JST 変換で日付がずれない（UTC深夜でも翌日にならない）", () => {
+    // 2027-07-24 20:00 UTC = 2027-07-25 05:00 JST → 7/25
+    assert.strictEqual(reissueName("X", Date.UTC(2027, 6, 24, 20, 0, 0)), "X【再発行 7/25】");
   });
 });
 

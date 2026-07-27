@@ -74,7 +74,8 @@ export const adminTestIssueCoupon = onRequest(COUPON_TEST_OPTIONS, async (req, r
   if (!cardId) { res.status(400).json({ ok: false, code: "invalid_argument", message: "cardId is required" }); return; }
 
   try {
-    const outcome = await issueCouponForCard(cardId);
+    // 管理画面からの発行は「手動（再）発行」＝名前に【再発行 M/D】を付け、既発行カードも再発行できる。
+    const outcome = await issueCouponForCard(cardId, { reissue: true });
     logger.info("adminTestIssueCoupon", { cardId, result: outcome.result, reason: outcome.reason });
     // 失敗/スキップでも HTTP 200 で返す（管理テストなので結果と raw を UI/ログで確認するため）。
     res.status(200).json({ ok: true, ...outcome });

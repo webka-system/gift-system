@@ -38,9 +38,12 @@
     </header>
 
     <!-- 取り扱いモード（カタログギフト / 株主優待クーポン）。混在を避けるため上位で明確に分ける。 -->
-    <div class="mode-switch" role="tablist" aria-label="取り扱いモード">
-      <button class="mode-btn active" data-mode="catalog" type="button">カタログギフト</button>
-      <button class="mode-btn" data-mode="coupon" type="button">株主優待クーポン</button>
+    <div class="mode-bar">
+      <span class="mode-label">取り扱い</span>
+      <div class="mode-switch" role="tablist" aria-label="取り扱いモード">
+        <button class="mode-btn active" data-mode="catalog" type="button">カタログギフト</button>
+        <button class="mode-btn" data-mode="coupon" type="button">株主優待クーポン</button>
+      </div>
     </div>
 
     <nav class="tabs">

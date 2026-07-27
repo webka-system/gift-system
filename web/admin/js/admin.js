@@ -39,7 +39,7 @@ function tableLoading(tbody, colspan) {
 
 /** テーブルに「データがありません」系の空メッセージ行を表示（0件時）。 */
 function tableEmpty(tbody, colspan, msg) {
-  tbody.innerHTML = `<tr><td colspan="${colspan}" class="muted">${esc(msg)}</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="${colspan}" class="empty-cell">${esc(msg)}</td></tr>`;
 }
 
 /** 結果表示欄に処理中インジケータ（スピナー＋メッセージ）を出す。 */

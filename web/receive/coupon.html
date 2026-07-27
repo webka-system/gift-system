@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>株主優待クーポン</title>
+  <!-- 既存カタログ受け取り者ページと同じ基本スタイル（ヘッダー/フッター/spinner/notice/primary 等）を共有。 -->
+  <link rel="stylesheet" href="/receive/css/receive.css" />
+  <link rel="stylesheet" href="/receive/css/coupon.css" />
+</head>
+<body>
+  <!-- 店舗ヘッダー（カタログページと共通）。 -->
+  <header class="site-header">
+    <img class="site-header-logo" src="https://file.otoriyose.site/assets/image/header-logo_sp.svg" alt="九州お取り寄せ本舗" />
+  </header>
+
+  <main class="app-shell">
+
+    <!-- 読み込み中 -->
+    <section id="view-loading" class="view">
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="muted center">読み込んでいます…</p>
+    </section>
+
+    <!-- クーポン発行中（都度発行のローディング） -->
+    <section id="view-issuing" class="view" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="muted center">クーポンを発行しています…<br />そのままお待ちください。</p>
+    </section>
+
+    <!-- 無効なリンク -->
+    <section id="view-invalid" class="view" hidden>
+      <div class="notice">
+        <h1>リンクが無効です</h1>
+        <p>このリンクは正しくないか、有効期限が切れている可能性があります。お手元のカードのQRコードを再度読み取ってください。</p>
+      </div>
+    </section>
+
+    <!-- 有効期限切れ -->
+    <section id="view-expired" class="view" hidden>
+      <div class="notice">
+        <h1>有効期限が過ぎています</h1>
+        <p>恐れ入りますが、このクーポンの有効期間を過ぎたため、ご利用いただけません。</p>
+      </div>
+    </section>
+
+    <!-- 発行失敗（リトライ可） -->
+    <section id="view-failed" class="view" hidden>
+      <div class="notice">
+        <h1>クーポンの発行に失敗しました</h1>
+        <p>お手数ですが、時間をおいて再度アクセスしてください。</p>
+        <button id="retry-btn" type="button" class="primary">もう一度試す</button>
+      </div>
+    </section>
+
+    <!-- クーポン表示（本体） -->
+    <section id="view-coupon" class="view" hidden>
+      <header class="head center">
+        <p id="coupon-name" class="coupon-name"></p>
+        <p id="coupon-discount" class="coupon-discount"></p>
+      </header>
+
+      <!-- クーポンコード＋コピー -->
+      <div class="coupon-card">
+        <p class="coupon-label">クーポンコード</p>
+        <p id="coupon-code" class="coupon-code"></p>
+        <button id="copy-btn" type="button" class="primary copy-btn">コードをコピー</button>
+        <p id="copy-feedback" class="copy-feedback" hidden>コピーしました</p>
+        <p id="coupon-expiry" class="coupon-expiry"></p>
+      </div>
+
+      <!-- 使い方（会員登録を促す導線） -->
+      <section class="howto">
+        <h2>ご利用方法</h2>
+        <ol class="howto-steps">
+          <li>
+            <span class="howto-no">1</span>
+            <div>
+              <b>会員登録</b>（無料）<br />
+              下のボタンから「九州お取り寄せ本舗」のサイトを開き、まずは会員登録をしてください。
+              <a id="ec-link-1" class="ec-inline" href="https://www.otoriyose.site/" target="_blank" rel="noopener">サイトを開いて会員登録</a>
+            </div>
+          </li>
+          <li>
+            <span class="howto-no">2</span>
+            <div><b>商品を選ぶ</b><br />お好きな商品をカゴに入れてください。</div>
+          </li>
+          <li>
+            <span class="howto-no">3</span>
+            <div><b>クーポンコードを入力</b><br />カゴ／購入手続きの画面で、上のクーポンコードを入力すると割引が適用されます。</div>
+          </li>
+        </ol>
+        <a id="ec-link" class="primary ec-btn" href="https://www.otoriyose.site/" target="_blank" rel="noopener">お買い物サイトへ（会員登録もこちら）</a>
+        <p class="muted small center">※ このクーポンは会員限定・お一人様1回のご利用です。まだ会員でない方は、まず会員登録をお願いします。</p>
+      </section>
+    </section>
+
+  </main>
+
+  <!-- 店舗フッター（カタログページと共通）。 -->
+  <footer class="site-footer">
+    <img class="site-footer-logo" src="https://file.otoriyose.site/assets/image/footer-logo_sp.svg" alt="九州お取り寄せ本舗" />
+    <p class="site-copyright">© KYUSHU OTORIYOSE HONPO All Rights Reserved.</p>
+  </footer>
+
+  <script type="module" src="/receive/js/coupon.js"></script>
+</body>
+</html>

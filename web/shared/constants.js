@@ -16,10 +16,71 @@ export const COLLECTIONS = {
   GIFT_CARDS: "giftCards",                 // 3.3 発行済みQRカード
 };
 
+// ===== ギフトカードの種類（kind / 抽象化の判別子）=====
+// 同じ骨格（QR一括生成→物理カード印刷→トークンURL→受け取り者ページ・ロット・有効期限・一覧）を
+// 共有しつつ、受け取り時の振る舞いだけを種類ごとに分岐する。
+//   - catalog: 従来のカタログギフト（商品選定→住所入力→NE受注登録）。
+//   - coupon : 株主優待クーポン（MakeShopでクーポンを都度発行しコードを表示。商品/住所/NEは使わない）。
+// giftCardTypes（種別マスタ）が kind を持ち、生成時に giftCards へデノーマライズ（コピー）する。
+// ★後方互換: kind 未設定のドキュメントは "catalog" とみなす（既存カタログを壊さない安全既定）。
+export const CARD_KIND = {
+  CATALOG: "catalog",
+  COUPON: "coupon",
+};
+
+// 未設定（無い）カードを既定として解釈するためのフォールバック。
+export const DEFAULT_CARD_KIND = CARD_KIND.CATALOG;
+
 // ===== 発行済みQRカードのステータス（design.md 3.3）=====
 export const CARD_STATUS = {
   UNUSED: "unused", // 未使用
   USED: "used",     // 使用済（受け取り者が確定 → 二重利用防止）
+};
+
+// ===== クーポン発行状態（kind=coupon 専用 / neStatus 一族と対称に設計）=====
+// クーポンは「都度発行」：株主の初回アクセスで MakeShop createCoupon を1件だけ実行しコードを保存する。
+// 二重発行防止は既存カタログ（trySubmitCard の pending→submitting claim）と同じ考え方:
+//   1) トランザクションで status==unused かつ couponStatus∉{issuing,issued} を検証し、
+//      couponStatus="issuing" を原子的に確保（＝発行枠のロック）。status は unused のまま。
+//   2) （トランザクション外で）MakeShop createCoupon を1回呼ぶ。
+//   3) 成功: status="used" ＋ couponStatus="issued" ＋ couponCode を書く（＝以後は保存済みコードを表示）。
+//   4) 失敗: couponStatus を消して未使用に戻す（＝カードは未使用のまま・リトライ可）。couponLastError を記録。
+// ★couponStatus 未設定（無い）＝まだ発行していない（＝初回アクセスで発行対象）。
+export const COUPON_STATUS = {
+  ISSUING: "issuing", // 発行処理中（claim による二重発行防止の中間状態。株主にはローディング表示）
+  ISSUED: "issued",   // 発行済（couponCode を保持。再アクセスは保存済みコードを表示するだけ）
+};
+
+// ===== 株主優待クーポンの設定（kind=coupon / MakeShop createCoupon へのマッピング）=====
+// 割引内容はクーポン種別（giftCardTypes.couponConfig）に固定し、期をまたいで使い回す。
+// 有効期限だけは「ロット（QR生成）ごとに絶対日付」で指定する（株主優待は期ごとに期限が変わるため / B案）。
+export const COUPON = {
+  // 割引方式（種別 couponConfig.discountType）。gift-system 内部の表現（"amount"/"rate"）。
+  // MakeShop の DiscountType enum（FIXED_AMOUNT / FIXED_RATE）へは makeshop/coupon.ts で変換する。
+  DISCOUNT_TYPE: {
+    AMOUNT: "amount", // 定額割引（円）→ MakeShop discountType=FIXED_AMOUNT / fixedAmount
+    RATE: "rate",     // 定率割引（%）→ MakeShop discountType=FIXED_RATE / fixedRate
+  },
+  // 利用回数制限（実スキーマ確認済み）: MakeShop に useCountType は無い。boolean ゲート＋数値で表す。
+  //   1人1回  = isForOnlyMember:true + hasMaximumMemberUsableCount:true + maximumMemberUsableCount:1
+  //   全体1回 = hasTotalUseCount:true + totalUseCount:1（コードは株主1名専用なので全体も1回）
+  MEMBER_USABLE_COUNT: 1,
+  TOTAL_USE_COUNT: 1,
+  // 会員限定（確定仕様。1人1回は会員限定が前提）。→ createCoupon.isForOnlyMember=true
+  IS_FOR_ONLY_MEMBER: true,
+  // 対象商品（確定仕様＝全商品。対象商品の限定フィールドは送らない）。
+  TARGET_ALL_PRODUCTS: true,
+  // ECサイト（株主が買い物するリンク先。会員登録もこの先で行う）。
+  EC_URL: "https://www.otoriyose.site/",
+  // クーポンコードの生成規則。
+  //   MakeShop 制約: 半角英数字20文字以内・大文字小文字は区別されない・登録後変更不可。
+  //   → 大小区別なしのため実効36文字種（小文字a-z + 数字0-9）で生成する（base64url 等は不可）。
+  //   紛らわしい文字を避け、推測困難な長さにする。重複(status:NG)なら再生成してリトライ。
+  CODE: {
+    ALPHABET: "abcdefghijkmnpqrstuvwxyz23456789", // o/l/0/1 等の紛らわしい文字を除外（32文字種）
+    LENGTH: 16,        // 20文字以内。16桁でも十分な推測困難性。
+    MAX_RETRY: 5,      // status:NG（重複等）時の再生成リトライ上限。
+  },
 };
 
 // ===== NE 投入状態（design.md 3.3 / 第6章）=====
@@ -53,8 +114,11 @@ export const NE_MODE = {
 export const TOKEN = {
   // 生成バイト数（base64url でおよそ 1.33 倍の文字数になる）。
   BYTES: 24,
-  // URL パスの接頭辞。
+  // URL パスの接頭辞（カタログ＝商品選択ページ /receive/index.html へ rewrite）。
   URL_PREFIX: "/g/",
+  // クーポン（kind=coupon）用の接頭辞（クーポン専用ページ /receive/coupon.html へ rewrite）。
+  // ★kind ごとにURLを分けることで、既存のカタログ受け取り者ページ（/g/）に一切触れずに振り分ける。
+  COUPON_URL_PREFIX: "/gc/",
 };
 
 // ===== QR 一括生成の上限（暴発防止のガード）=====

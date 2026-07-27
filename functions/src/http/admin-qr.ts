@@ -12,10 +12,11 @@
 
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
-import { FieldValue } from "firebase-admin/firestore";
-import { CARD_STATUS, QR_GENERATION } from "../config/constants";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { CARD_STATUS, QR_GENERATION, CARD_KIND, DEFAULT_CARD_KIND } from "../config/constants";
 import { HTTP_OPTIONS } from "./options";
 import { db, giftCardsRef, giftCardTypesRef } from "../lib/firestore";
+import { GiftCardData } from "../models";
 import { generateCardToken } from "../lib/token";
 import { applyCors } from "./cors";
 import { requireAuth } from "./guard";
@@ -27,6 +28,27 @@ const BATCH_LIMIT = 500;
 interface GenerateBody {
   cardTypeId?: unknown;
   count?: unknown;
+  /** kind=coupon 生成時のみ: クーポン有効期限の絶対日付 "YYYY-MM-DD"（ロット単位・B案）。 */
+  expiryDate?: unknown;
+}
+
+/**
+ * "YYYY-MM-DD" を JST のその日の終わり(23:59:59)の Timestamp に変換する。
+ * クーポンの有効期限は「その日いっぱい有効」にしたいので end-of-day を採用。
+ * 妥当な日付でなければ null を返す（呼び出し側で 400 にする）。
+ */
+export function parseExpiryDateJst(raw: string): Timestamp | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  // JST 23:59:59 = 同日 14:59:59 UTC（JST=UTC+9）。
+  const ms = Date.UTC(y, mo - 1, d, 23, 59, 59, 999) - 9 * 60 * 60 * 1000;
+  const check = new Date(ms + 9 * 60 * 60 * 1000);
+  // 桁合わせ後に実在しない日付（例 2-30）を弾く。
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d) return null;
+  return Timestamp.fromMillis(ms);
 }
 
 /**
@@ -51,6 +73,7 @@ export const adminGenerateGiftCards = onRequest(HTTP_OPTIONS, async (req, res) =
   const body = (req.body ?? {}) as GenerateBody;
   const cardTypeId = typeof body.cardTypeId === "string" ? body.cardTypeId.trim() : "";
   const count = typeof body.count === "number" ? Math.floor(body.count) : NaN;
+  const expiryDateRaw = typeof body.expiryDate === "string" ? body.expiryDate.trim() : "";
 
   if (!cardTypeId) {
     res.status(400).json({ ok: false, code: "invalid_argument", message: "cardTypeId is required" });
@@ -72,6 +95,27 @@ export const adminGenerateGiftCards = onRequest(HTTP_OPTIONS, async (req, res) =
     return;
   }
 
+  // 種別の kind を確定（未設定は catalog＝後方互換）。生成カードへデノーマライズする。
+  const kind = typeSnap.data()?.kind ?? DEFAULT_CARD_KIND;
+
+  // kind=coupon は有効期限（絶対日付）をロット単位で必須指定（B案）。catalog は従来通り expiryDate 不使用。
+  let couponExpiryAt: Timestamp | null = null;
+  if (kind === CARD_KIND.COUPON) {
+    if (!expiryDateRaw) {
+      res.status(400).json({ ok: false, code: "expiry_required", message: "expiryDate is required for coupon" });
+      return;
+    }
+    couponExpiryAt = parseExpiryDateJst(expiryDateRaw);
+    if (!couponExpiryAt) {
+      res.status(400).json({ ok: false, code: "invalid_expiry", message: "expiryDate must be a valid YYYY-MM-DD" });
+      return;
+    }
+    if (couponExpiryAt.toMillis() <= Date.now()) {
+      res.status(400).json({ ok: false, code: "invalid_expiry", message: "expiryDate must be in the future" });
+      return;
+    }
+  }
+
   // このリクエスト（一括生成）を1ロットとして識別する batchId。ロット絞り込み・突合に使う。
   const batchId = generateCardToken();
   const generatedAt = FieldValue.serverTimestamp() as unknown as FirebaseFirestore.Timestamp;
@@ -84,7 +128,9 @@ export const adminGenerateGiftCards = onRequest(HTTP_OPTIONS, async (req, res) =
       const batch = db.batch();
       for (let i = 0; i < chunk; i++) {
         const ref = giftCardsRef.doc();
-        batch.set(ref, {
+        // 共通フィールド（catalog/coupon 共通）。カタログ生成の書き込み内容は従来と同一＋kind のみ追加。
+        const cardData: GiftCardData = {
+          kind, // 種類をデノーマライズ（受け取り者フローの振り分け・一覧絞り込み用）。
           token: generateCardToken(),
           cardTypeId,
           status: CARD_STATUS.UNUSED,
@@ -93,7 +139,10 @@ export const adminGenerateGiftCards = onRequest(HTTP_OPTIONS, async (req, res) =
           createdAt: FieldValue.serverTimestamp() as unknown as FirebaseFirestore.Timestamp,
           generatedAt, // ロット管理: 生成日時（バッチ内は同一）。
           batchId,     // ロット管理: 同一の一括生成をまとめる識別子。
-        });
+        };
+        // coupon 固有: クーポン有効期限（絶対日付・ロット単位。QRゲートと createCoupon.endedAt 兼用）。
+        if (couponExpiryAt) cardData.couponExpiryAt = couponExpiryAt;
+        batch.set(ref, cardData);
       }
       await batch.commit();
       created += chunk;
@@ -110,6 +159,6 @@ export const adminGenerateGiftCards = onRequest(HTTP_OPTIONS, async (req, res) =
     return;
   }
 
-  logger.info("adminGenerateGiftCards: created", { cardTypeId, created, batchId });
-  res.status(200).json({ ok: true, created, batchId });
+  logger.info("adminGenerateGiftCards: created", { cardTypeId, kind, created, batchId });
+  res.status(200).json({ ok: true, created, batchId, kind });
 });

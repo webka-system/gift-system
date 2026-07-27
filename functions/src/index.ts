@@ -56,3 +56,13 @@ export { adminExportUrlXlsx } from "./http/admin-export";
 // 管理API: 受注内容の直接編集 / 使用済みカードのやり直し / 個別カードの有効期限上書き（延長）。
 // requireAuth 必須。★新規HTTP関数のため、デプロイ後に Cloud Run で手動「パブリックアクセスを許可」が必要。
 export { adminUpdateGiftCard, adminResetGiftCard, adminSetCardExpiry } from "./http/admin-card";
+
+// 管理API（クーポン / 株主優待）: MakeShop へ1件テスト発行（実接続の検証用）。
+// requireAuth＋MakeShop秘匿値注入。★新規HTTP関数のため、デプロイ後に Cloud Run で手動「パブリックアクセスを許可」が必要。
+export { adminTestIssueCoupon } from "./http/admin-coupon";
+
+// 受け取り者API（クーポン / 株主優待 / kind=coupon）:
+//   receiveGetCoupon  … トークンでクーポン状態を引く（副作用なし）。
+//   receiveClaimCoupon … 都度発行（未発行を検証して MakeShop 発行→issued 確定。MakeShop秘匿値注入）。
+// ログイン不要・トークンが唯一のアクセス制御。★新規HTTP関数のため、デプロイ後に Cloud Run で手動「パブリックアクセスを許可」が必要。
+export { receiveGetCoupon, receiveClaimCoupon } from "./http/receive-coupon";

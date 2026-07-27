@@ -90,7 +90,8 @@ export const adminExportUrlXlsx = onRequest(HTTP_OPTIONS, async (req, res) => {
     const rows: UrlRow[] = docs.map((d) => {
       const c = d.data();
       return {
-        url: buildCardUrl(origin, c.token),
+        // kind に応じて /g/（catalog）または /gc/（coupon）で組み立てる。印刷される物理カードのQRが正しい着地先を指す。
+        url: buildCardUrl(origin, c.token, c.kind),
         token: c.token,
         cardTypeName: typeNameById.get(c.cardTypeId) || c.cardTypeId,
       };

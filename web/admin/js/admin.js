@@ -15,13 +15,14 @@
 import { onAuth, login, logout, idToken, loginErrorMessage } from "./auth.js";
 import {
   listCardTypes, createCardType, updateCardType, setCardTypeActive,
+  listCouponTypes, createCouponType,
   listProductsByType, createProduct, updateProduct, deleteProduct,
   listCards, updateCardMemo, getProductById, getCard, deleteField, CARD_STATUS,
 } from "./db.js";
 import { uploadProductImage } from "./storage.js";
-import { neStatusInfo, statusBadgeHtml } from "./status.js";
+import { neStatusInfo, statusBadgeHtml, couponStatusInfo } from "./status.js";
 import { filterCards, LOT_NONE } from "./cards-filter.js";
-import { TOKEN, PRODUCT, PREFECTURES, DELIVERY, NE_STATUS } from "/shared/constants.js";
+import { TOKEN, PRODUCT, PREFECTURES, DELIVERY, NE_STATUS, CARD_KIND, COUPON, COUPON_STATUS } from "/shared/constants.js";
 import { expiryInfo } from "/shared/expiry.js";
 
 // ===== 小さなユーティリティ =====
@@ -53,9 +54,14 @@ function busyDone(el, msg = "") {
   el.classList.remove("busy");
 }
 
-/** 受け取り者用URL（PUBLIC_HOSTING_ORIGIN 相当 = 現在のオリジン + /g/<token>）。 */
-function receiveUrl(token) {
-  return `${location.origin}${TOKEN.URL_PREFIX}${token}`;
+/**
+ * 受け取り者用URL（現在のオリジン + 接頭辞 + token）。
+ * kind により接頭辞を切り替える（catalog=/g/ 商品選択ページ / coupon=/gc/ クーポン専用ページ）。
+ * kind 未指定は catalog（従来どおり /g/）。
+ */
+function receiveUrl(token, kind) {
+  const prefix = kind === CARD_KIND.COUPON ? TOKEN.COUPON_URL_PREFIX : TOKEN.URL_PREFIX;
+  return `${location.origin}${prefix}${token}`;
 }
 
 /** HTMLエスケープ（管理者入力の表示時XSS対策）。 */
@@ -89,6 +95,8 @@ function flash(msg, kind = "info") {
 
 // 種別のキャッシュ（商品・QR画面のセレクタ描画に使う）。
 let cardTypesCache = [];
+// クーポン種別（kind=coupon）のキャッシュ。catalog とは別クエリ（listCouponTypes）で取得。
+let couponTypesCache = [];
 
 /**
  * admin系 API（/api/admin*）の共通 fetch。ログイン中ユーザーの IDトークンを Authorization に付与する。
@@ -161,7 +169,7 @@ async function loadTab(tab) {
 
 /** 種別を取り直してキャッシュとセレクタを最新化する（selectors を持つ各タブの前処理）。 */
 async function refreshTypes() {
-  cardTypesCache = await listCardTypes();
+  [cardTypesCache, couponTypesCache] = await Promise.all([listCardTypes(), listCouponTypes()]);
   refreshTypeSelectors();
 }
 
@@ -180,19 +188,47 @@ async function bootApp() {
 async function renderCardTypes() {
   const tbody = $("#types-tbody");
   tableLoading(tbody, 5);
-  cardTypesCache = await listCardTypes();
+  // catalog / coupon の両キャッシュを取り直す（生成セレクタが両方を必要とするため）。
+  [cardTypesCache, couponTypesCache] = await Promise.all([listCardTypes(), listCouponTypes()]);
   refreshTypeSelectors();
   tbody.innerHTML = "";
   if (cardTypesCache.length === 0) {
     tableEmpty(tbody, 5, "まだ種別がありません。下のフォームから登録してください。");
+  } else {
+    for (const t of cardTypesCache) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${esc(t.name)}</td>
+        <td>${yen(t.price)}</td>
+        <td>${esc(t.cardProductCode)}</td>
+        <td>${t.active ? "有効" : "<span class='muted'>無効</span>"}</td>
+        <td>
+          <div class="row-actions">
+            <button data-act="toggle" data-id="${t.id}">${t.active ? "無効化" : "有効化"}</button>
+            <button data-act="edit" data-id="${t.id}">編集</button>
+          </div>
+        </td>`;
+      tbody.appendChild(tr);
+    }
+  }
+  renderCouponTypes();
+}
+
+/** クーポン種別（kind=coupon）の一覧を描画する。catalog とは別テーブル・別フォーム。 */
+function renderCouponTypes() {
+  const tbody = $("#coupon-types-tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  if (couponTypesCache.length === 0) {
+    tableEmpty(tbody, 5, "まだクーポン種別がありません。下のフォームから登録してください。");
     return;
   }
-  for (const t of cardTypesCache) {
+  for (const t of couponTypesCache) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${esc(t.name)}</td>
-      <td>${yen(t.price)}</td>
-      <td>${esc(t.cardProductCode)}</td>
+      <td>${couponDiscountText(t.couponConfig)}</td>
+      <td>${t.couponConfig?.minimumPrice ? yen(t.couponConfig.minimumPrice) : "<span class='muted'>下限なし</span>"}</td>
       <td>${t.active ? "有効" : "<span class='muted'>無効</span>"}</td>
       <td>
         <div class="row-actions">
@@ -202,6 +238,13 @@ async function renderCardTypes() {
       </td>`;
     tbody.appendChild(tr);
   }
+}
+
+/** クーポン割引の表示文字列（"10% OFF" / "500円 OFF"）。 */
+function couponDiscountText(cfg) {
+  if (!cfg) return "";
+  if (cfg.discountType === COUPON.DISCOUNT_TYPE.RATE) return `${esc(cfg.discountValue)}% OFF`;
+  return `${yen(cfg.discountValue)} OFF`;
 }
 
 $("#types-tbody").addEventListener("click", async (e) => {
@@ -224,6 +267,44 @@ $("#types-tbody").addEventListener("click", async (e) => {
     $("#type-name").focus();
   }
 });
+
+// クーポン種別テーブルの操作（有効/無効・編集）。catalog とは別テーブル。
+$("#coupon-types-tbody").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  const t = couponTypesCache.find((x) => x.id === btn.dataset.id);
+  if (!t) return;
+  if (btn.dataset.act === "toggle") {
+    await setCardTypeActive(t.id, !t.active);
+    flash(`「${t.name}」を${t.active ? "無効化" : "有効化"}しました。`);
+    await renderCardTypes();
+  } else if (btn.dataset.act === "edit") {
+    $("#coupon-type-id").value = t.id;
+    $("#coupon-type-name").value = t.name;
+    $("#coupon-type-discount-type").value = t.couponConfig?.discountType ?? COUPON.DISCOUNT_TYPE.RATE;
+    $("#coupon-type-value").value = t.couponConfig?.discountValue ?? "";
+    $("#coupon-type-min").value = t.couponConfig?.minimumPrice ?? "";
+    updateCouponValueLabel();
+    $("#coupon-type-submit").textContent = "クーポン種別を更新";
+    $("#coupon-type-cancel").hidden = false;
+    $("#coupon-type-name").focus();
+  }
+});
+
+/** 割引方式に応じて割引値の入力ラベル（%か円）を切り替える。 */
+function updateCouponValueLabel() {
+  const isRate = $("#coupon-type-discount-type").value === COUPON.DISCOUNT_TYPE.RATE;
+  $("#coupon-type-value-label").textContent = isRate ? "割引率（%）" : "割引額（円）";
+}
+
+/** クーポン種別フォームを新規登録モードに戻す。 */
+function resetCouponTypeForm() {
+  $("#coupon-type-form").reset();
+  $("#coupon-type-id").value = "";
+  $("#coupon-type-submit").textContent = "クーポン種別を登録";
+  $("#coupon-type-cancel").hidden = true;
+  updateCouponValueLabel();
+}
 
 function wireForms() {
   // 種別フォーム（新規/更新兼用）。
@@ -260,6 +341,43 @@ function wireForms() {
     await renderCardTypes();
   });
 
+  // クーポン種別フォーム（新規/更新兼用）。
+  $("#coupon-type-discount-type").addEventListener("change", updateCouponValueLabel);
+  $("#coupon-type-cancel").addEventListener("click", resetCouponTypeForm);
+  $("#coupon-type-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = $("#coupon-type-id").value;
+    const name = $("#coupon-type-name").value.trim();
+    const discountType = $("#coupon-type-discount-type").value;
+    const discountValue = Number($("#coupon-type-value").value);
+    const minRaw = $("#coupon-type-min").value.trim();
+    const minimumPrice = minRaw === "" ? undefined : Number(minRaw);
+    if (!name || !Number.isFinite(discountValue) || discountValue <= 0) {
+      flash("表示名と割引値（1以上）は必須です。", "error");
+      return;
+    }
+    if (discountType === COUPON.DISCOUNT_TYPE.RATE && discountValue > 100) {
+      flash("割引率は100%以下で指定してください。", "error");
+      return;
+    }
+    if (minRaw !== "" && (!Number.isFinite(minimumPrice) || minimumPrice <= 0)) {
+      flash("最低購入額は1以上の数値、または空欄にしてください。", "error");
+      return;
+    }
+    if (id) {
+      // 更新: couponConfig をまるごと差し替え（最低購入額の削除も反映）。
+      const couponConfig = { discountType, discountValue };
+      if (minimumPrice) couponConfig.minimumPrice = minimumPrice;
+      await updateCardType(id, { name, couponConfig });
+      flash("クーポン種別を更新しました。");
+    } else {
+      await createCouponType({ name, discountType, discountValue, minimumPrice });
+      flash("クーポン種別を登録しました。");
+    }
+    resetCouponTypeForm();
+    await renderCardTypes();
+  });
+
   // 商品フォーム。
   $("#product-form").addEventListener("submit", onProductSubmit);
   $("#product-cancel").addEventListener("click", resetProductForm);
@@ -278,6 +396,8 @@ function wireForms() {
 
   // QR生成フォーム。
   $("#generate-form").addEventListener("submit", onGenerateSubmit);
+  // 種別を切り替えたら kind に応じて有効期限UIを出し分ける。
+  $("#generate-type-select").addEventListener("change", syncGenerateExpiryField);
 
   // QR一覧フィルタ。種別・状態はサーバ再取得、NE投入状態・検索はクライアント側でリアルタイム絞り込み。
   $("#cards-type-select").addEventListener("change", renderCards);
@@ -354,7 +474,9 @@ async function onExportUrlXlsx() {
 
 // 種別セレクタ（商品・QR生成・一覧）を最新の種別で埋める。
 function refreshTypeSelectors() {
-  for (const sel of ["#product-type-select", "#generate-type-select", "#cards-type-select", "#print-type-select"]) {
+  // 商品/一覧/印刷の種別セレクタは従来通り catalog 種別のみ（無改変）。
+  // ※クーポンカードも一覧に出るが、種別フィルタは「すべての種別」で拾える。専用の kind フィルタは後続フェーズ。
+  for (const sel of ["#product-type-select", "#cards-type-select", "#print-type-select"]) {
     const el = $(sel);
     if (!el) continue;
     const prev = el.value;
@@ -363,6 +485,36 @@ function refreshTypeSelectors() {
       cardTypesCache.map((t) => `<option value="${t.id}">${esc(t.name)}（${yen(t.price)}）</option>`).join("");
     if (prev) el.value = prev;
   }
+
+  // 生成セレクタは catalog＋coupon の両方を出す（kind で有効期限UIを出し分けるため data-kind を付与）。
+  const gsel = $("#generate-type-select");
+  if (gsel) {
+    const prev = gsel.value;
+    const catalogOpts = cardTypesCache
+      .map((t) => `<option value="${t.id}" data-kind="${CARD_KIND.CATALOG}">${esc(t.name)}（${yen(t.price)}）</option>`)
+      .join("");
+    const couponOpts = couponTypesCache
+      .map((t) => `<option value="${t.id}" data-kind="${CARD_KIND.COUPON}">${esc(t.name)}（クーポン）</option>`)
+      .join("");
+    gsel.innerHTML = catalogOpts + couponOpts;
+    if (prev) gsel.value = prev;
+    syncGenerateExpiryField();
+  }
+}
+
+/** 生成セレクタで選ばれた種別の kind を返す（"catalog" | "coupon"）。 */
+function selectedGenerateKind() {
+  const opt = $("#generate-type-select")?.selectedOptions?.[0];
+  return opt?.dataset?.kind || CARD_KIND.CATALOG;
+}
+
+/** クーポン種別を選んだときだけ有効期限（絶対日付）の入力欄と注記を表示する。 */
+function syncGenerateExpiryField() {
+  const isCoupon = selectedGenerateKind() === CARD_KIND.COUPON;
+  const field = $("#generate-expiry-field");
+  const note = $("#generate-note");
+  if (field) field.hidden = !isCoupon;
+  if (note) note.hidden = !isCoupon;
 }
 
 // ============================================================
@@ -638,6 +790,12 @@ function onProductDetailClick(e) {
 // ============================================================
 // QR一括生成（Cloud Functions）
 // ============================================================
+/** 今日の日付（JST・"YYYY-MM-DD"）。クーポン有効期限が過去でないことの簡易チェックに使う。 */
+function jstTodayStr() {
+  const j = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return `${j.getUTCFullYear()}-${String(j.getUTCMonth() + 1).padStart(2, "0")}-${String(j.getUTCDate()).padStart(2, "0")}`;
+}
+
 async function onGenerateSubmit(e) {
   e.preventDefault();
   const cardTypeId = $("#generate-type-select").value;
@@ -650,6 +808,21 @@ async function onGenerateSubmit(e) {
     flash("生成個数は1以上の整数で指定してください。", "error");
     return;
   }
+  // クーポン種別のときは有効期限（絶対日付）を必須で送る（ロット単位 / B案）。
+  const payload = { cardTypeId, count };
+  if (selectedGenerateKind() === CARD_KIND.COUPON) {
+    const expiryDate = $("#generate-expiry").value; // "YYYY-MM-DD"
+    if (!expiryDate) {
+      flash("クーポンの有効期限（絶対日付）を指定してください。", "error");
+      return;
+    }
+    const todayJst = jstTodayStr();
+    if (expiryDate < todayJst) {
+      flash("有効期限は本日以降の日付を指定してください。", "error");
+      return;
+    }
+    payload.expiryDate = expiryDate;
+  }
   const btn = $("#generate-submit");
   btn.disabled = true;
   busy($("#generate-result"), "生成中…");
@@ -657,7 +830,7 @@ async function onGenerateSubmit(e) {
     const res = await authorizedFetch("/api/adminGenerateGiftCards", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cardTypeId, count }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) {
@@ -766,8 +939,28 @@ function tsMillis(ts) {
  * cardsCache に対して NE投入状態フィルタ＋テキスト検索を適用して描画する（クライアント側・リアルタイム）。
  * 種別・状態の変更は renderCards（再取得）側で扱う。フィルタ本体は cards-filter.js（純粋関数）。
  */
-/** カードの有効期限判定（種別デフォルト＋個別上書き＋現在時刻）。cardTypesCache を参照。 */
+// クーポンの「期限間近」しきい値（日）。QR一覧の「期限が近い（7日以内）」と揃える。
+const COUPON_NEAR_DAYS = 7;
+
+/**
+ * カードの有効期限判定。
+ *   - catalog: 種別デフォルト expiryDays ＋個別上書き（相対日数・cardTypesCache 参照）＝従来どおり。
+ *   - coupon : couponExpiryAt（絶対日付・ロット単位）で判定。expiryInfo と同じ形の結果を返す。
+ */
 function cardExpiry(c) {
+  if ((c.kind ?? CARD_KIND.CATALOG) === CARD_KIND.COUPON) {
+    const ms = tsMillis(c.couponExpiryAt);
+    if (!ms) return { hasExpiry: false, expired: false, near: false };
+    const now = Date.now();
+    const remainingDays = Math.ceil((ms - now) / 86400000);
+    return {
+      hasExpiry: true,
+      expired: now > ms,
+      near: now <= ms && remainingDays <= COUPON_NEAR_DAYS,
+      expiryMs: ms,
+      remainingDays,
+    };
+  }
   const type = cardTypesCache.find((t) => t.id === c.cardTypeId);
   return expiryInfo({
     generatedAtMs: typeof c.generatedAt?.toMillis === "function" ? c.generatedAt.toMillis() : undefined,
@@ -790,7 +983,7 @@ function applyCardFilters() {
   const batchId = $("#cards-lot-select").value;               // "" or batchId or LOT_NONE
   const expiryFilter = $("#cards-expiry-select").value;       // "" / "expired" / "near"
   const query = $("#cards-search").value;
-  const typeName = (id) => cardTypesCache.find((t) => t.id === id)?.name || id;
+  const typeName = (id) => findAnyType(id)?.name || id;
 
   const genFrom = $("#cards-gen-from").value;
   const genTo = $("#cards-gen-to").value;
@@ -817,7 +1010,7 @@ function applyCardFilters() {
   // 一覧は要点だけ（生成日/有効期限→状態→種別→受け取り者名→使用日時→memo→操作）。
   // トークン・受け取り者URL の全文は詳細ビューと「URLコピー」で参照できるよう一覧からは外す。
   for (const c of rows) {
-    const url = receiveUrl(c.token);
+    const url = receiveUrl(c.token, c.kind);
     const gen = c.generatedAt ? fmtDate(c.generatedAt) : "不明";
     const exp = cardExpiry(c);
     const expTxt = expiryText(exp);
@@ -871,13 +1064,13 @@ async function onCardsClick(e) {
   }
 }
 
-/** クリップボードにコピー（成功/失敗をflashで通知）。一覧・詳細で共用。 */
-async function copyToClipboard(text) {
+/** クリップボードにコピー（成功/失敗をflashで通知）。一覧・詳細で共用。what はコピー対象の名称。 */
+async function copyToClipboard(text, what = "URL") {
   try {
     await navigator.clipboard.writeText(text);
-    flash("URLをコピーしました。");
+    flash(`${what}をコピーしました。`);
   } catch (_) {
-    flash("コピーに失敗しました。URLを選択して手動でコピーしてください。", "error");
+    flash(`コピーに失敗しました。${what}を選択して手動でコピーしてください。`, "error");
   }
 }
 
@@ -893,6 +1086,11 @@ function addrRow(label, value) {
     `<span class="detail-value">${value ? esc(value) : "<span class='muted'>—</span>"}</span></div>`;
 }
 
+/** 種別を catalog / coupon の両キャッシュから探す（表示用のフォールバック）。 */
+function findAnyType(id) {
+  return cardTypesCache.find((t) => t.id === id) || couponTypesCache.find((t) => t.id === id) || null;
+}
+
 /** 詳細モーダルを開いてカードの受注内容を描画する。選択商品は Firestore から引く。 */
 async function openCardDetail(cardId) {
   const card = cardsCache.find((c) => c.id === cardId);
@@ -902,6 +1100,12 @@ async function openCardDetail(cardId) {
   const body = $("#detail-body");
   overlay.hidden = false;
   body.innerHTML = `<div class="loading-cell">${SPINNER}読み込み中…</div>`;
+
+  // ★kind=coupon はカタログとは別のクーポン専用ビューへ振り分ける（カタログ描画には一切触れない）。
+  if ((card.kind ?? CARD_KIND.CATALOG) === CARD_KIND.COUPON) {
+    body.innerHTML = couponDetailHtml(card);
+    return;
+  }
 
   const type = cardTypesCache.find((t) => t.id === card.cardTypeId);
   const used = card.status === CARD_STATUS.USED;
@@ -1015,6 +1219,91 @@ async function openCardDetail(cardId) {
     </section>` : ""}
 
     ${historyHtml(card)}`;
+}
+
+/**
+ * クーポンカード（kind=coupon）専用の詳細ビュー。
+ * カタログの受注詳細とは別物：商品/住所/NEは無く、クーポン発行状態・コード・テスト発行ボタン・
+ * MakeShop 生レスポンス表示（デバッグ用）を出す。恒久機能として失敗カードの手動再発行にも使う。
+ */
+function couponDetailHtml(card) {
+  const type = findAnyType(card.cardTypeId);
+  const exp = cardExpiry(card);
+  const url = receiveUrl(card.token, CARD_KIND.COUPON);
+  const cs = couponStatusInfo(card);
+  const issued = card.couponStatus === COUPON_STATUS.ISSUED;
+  const issuing = card.couponStatus === COUPON_STATUS.ISSUING;
+  const discount = type?.couponConfig ? couponDiscountText(type.couponConfig) : "";
+
+  const codeBlock = card.couponCode
+    ? `<div class="detail-row"><span class="detail-label">クーポンコード</span>
+         <span class="detail-value mono">${esc(card.couponCode)}
+           <button class="copy-btn" type="button" data-act="coupon-copy-code" data-code="${esc(card.couponCode)}">コピー</button>
+         </span></div>`
+    : "";
+  const errBlock = card.couponLastError
+    ? `<div class="ne-warn">⚠ 直近の発行エラー: ${esc(card.couponLastError)}</div>` : "";
+
+  let action, note;
+  if (issued) {
+    action = "";
+    note = `<p class="muted small">発行済みです（お一人様1回・会員限定）。二重発行防止のため、ここからは再発行できません。</p>`;
+  } else if (issuing) {
+    action = "";
+    note = `<p class="muted small">発行処理中の状態です。少し待ってから詳細を開き直してください。</p>`;
+  } else {
+    const label = card.couponLastError ? "クーポンを再発行" : "クーポンをテスト発行";
+    action = `<div class="detail-ops"><button data-act="coupon-issue" type="button">${label}</button></div>`;
+    note = `<p class="muted small">押すと<strong>実際に MakeShop へクーポンを1件発行</strong>します（確認ダイアログあり）。
+      成功なら発行コードを表示し、失敗なら MakeShop の応答（raw）をそのまま表示します。</p>`;
+  }
+
+  return `
+    <section class="detail-section">
+      <h3>クーポンカード</h3>
+      ${addrRow("種別", type ? `${type.name}${discount ? `（${discount}）` : ""}` : card.cardTypeId)}
+      ${addrRow("トークン", card.token)}
+      ${addrRow("生成日時", card.generatedAt ? fmtDate(card.generatedAt) : "不明")}
+      ${card.batchId ? addrRow("ロットID", card.batchId) : ""}
+      ${addrRow("クーポン有効期限", card.couponExpiryAt ? fmtDate(card.couponExpiryAt) : "未設定")}
+      ${exp.hasExpiry && !exp.expired ? addrRow("期限まで", `残り ${exp.remainingDays} 日`) : ""}
+      <div class="detail-row">
+        <span class="detail-label">状態</span>
+        <span class="detail-value status-cell">${statusBadgeHtml(card, exp)}</span>
+      </div>
+      ${issued ? addrRow("発行日時", fmtDate(card.couponIssuedAt)) : ""}
+    </section>
+
+    <section class="detail-section">
+      <h3>受け取り者（株主）用URL</h3>
+      <div class="url-cell">
+        <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>
+        <button class="copy-btn" type="button" data-act="detail-copy-url" data-url="${esc(url)}">コピー</button>
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <h3>クーポン発行</h3>
+      <div class="detail-row">
+        <span class="detail-label">現在の状態</span>
+        <span class="detail-value status-cell"><span class="badge badge-${cs.kind}">${cs.label}</span></span>
+      </div>
+      ${codeBlock}
+      ${errBlock}
+      ${note}
+      ${action}
+      <div class="detail-ops">
+        <button data-act="coupon-introspect" type="button" class="ghost">スキーマ確認（introspection）</button>
+      </div>
+      <p class="muted small">「スキーマ確認」は MakeShop の実スキーマ（CreateCouponRequest のフィールド名・enum値・結果型）を取得して下に表示します（クーポンは発行しません）。表示された内容を開発者に共有すると、送信フィールドを実スキーマに合わせられます。</p>
+      <div id="coupon-result" class="coupon-result"></div>
+    </section>
+
+    <section class="detail-section">
+      <h3>memo（管理者記入欄）</h3>
+      <textarea id="detail-memo" class="detail-memo" rows="2" placeholder="受注番号など突合用">${esc(card.memo)}</textarea>
+      <div><button id="detail-memo-save" type="button">memoを保存</button></div>
+    </section>`;
 }
 
 /**
@@ -1145,6 +1434,115 @@ async function onDetailClick(e) {
   if (act === "card-reset") { await onCardReset(btn); return; }
   if (act === "expiry-save") { await onExpirySave(btn); return; }
   if (act === "ne-manual-submit") { await onManualSubmitNe(btn); return; }
+  if (act === "coupon-issue") { await onIssueCoupon(btn); return; }
+  if (act === "coupon-copy-code") { await copyToClipboard(btn.dataset.code, "クーポンコード"); return; }
+  if (act === "coupon-introspect") { await onIntrospectSchema(btn); return; }
+  if (act === "coupon-copy-raw") { await copyToClipboard(lastCouponRawJson, "raw"); return; }
+}
+
+/**
+ * MakeShop の実スキーマを取得して結果欄に表示する（introspection）。
+ * adminTestIssueCoupon の introspect モードを叩く（クーポンは発行しない）。
+ * 表示された CreateCouponRequest のフィールド名・enum値・結果型を見て、送信フィールドを実スキーマに合わせる。
+ */
+async function onIntrospectSchema(btn) {
+  const resultEl = $("#coupon-result");
+  btn.disabled = true;
+  if (resultEl) resultEl.innerHTML = `<div class="loading-cell">${SPINNER}スキーマ取得中…</div>`;
+  try {
+    const res = await authorizedFetch("/api/adminTestIssueCoupon", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ introspect: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      renderCouponResult(resultEl, { error: data?.message || data?.code || `HTTP ${res.status}`, raw: data });
+      flash("スキーマ取得に失敗しました。", "error");
+      return;
+    }
+    renderCouponResult(resultEl, { raw: data.raw });
+    flash("スキーマを取得しました。「コピー」で全文をコピーして共有してください。");
+  } catch (err) {
+    renderCouponResult(resultEl, { error: err?.message || String(err) });
+    flash(`スキーマ取得に失敗しました: ${err?.message || err}`, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/**
+ * クーポンをテスト発行（詳細ビュー・単一カード）。adminTestIssueCoupon を叩く。
+ * 実際に MakeShop へ発行されるため確認ダイアログを挟む。結果（成功コード or 失敗の raw）を
+ * モーダル内 #coupon-result にそのまま表示する（スキーマ調整のため raw を見せることが重要）。
+ * ※詳細は開き直さない（raw を消さないため）。一覧のバッジだけ裏で最新化する。
+ */
+async function onIssueCoupon(btn) {
+  const id = detailCardId;
+  if (!id) return;
+  const card = cardsCache.find((c) => c.id === id);
+  if (!card) return;
+  if (card.couponStatus === COUPON_STATUS.ISSUED) {
+    flash("このカードは既にクーポン発行済みです（二重発行防止）。", "error");
+    return;
+  }
+  if (!confirm("実際に MakeShop へクーポンを1件発行します。よろしいですか？")) return;
+
+  const resultEl = $("#coupon-result");
+  btn.disabled = true;
+  if (resultEl) resultEl.innerHTML = `<div class="loading-cell">${SPINNER}発行しています…</div>`;
+  try {
+    const res = await authorizedFetch("/api/adminTestIssueCoupon", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cardId: id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      // makeshop_not_configured / 認証エラー等。message/code をそのまま見せる。
+      renderCouponResult(resultEl, { error: data?.message || data?.code || `HTTP ${res.status}`, raw: data });
+      flash(`発行に失敗しました: ${data?.message || data?.code || res.status}`, "error");
+      return;
+    }
+    renderCouponResult(resultEl, data); // { result, couponCode, error, reason, raw }
+    if (data.result === "issued") flash(`クーポンを発行しました: ${data.couponCode || ""}`);
+    else if (data.result === "failed") flash(`発行失敗: ${data.error || ""}`, "error");
+    else flash(`スキップ: ${data.reason || ""}`, "error");
+    // 一覧のバッジを裏で最新化（詳細は開き直さず raw を残す）。
+    const fresh = await getCard(id);
+    const i = cardsCache.findIndex((c) => c.id === id);
+    if (fresh && i >= 0) { cardsCache[i] = fresh; applyCardFilters(); }
+  } catch (err) {
+    renderCouponResult(resultEl, { error: err?.message || String(err) });
+    flash(`発行に失敗しました: ${err?.message || err}`, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// 直近に表示した raw（生レスポンス／スキーマ）のJSON文字列。「コピー」ボタンで全文コピーするため保持。
+let lastCouponRawJson = "";
+
+/** テスト発行/スキーマ確認の結果（成功コード／失敗理由／MakeShop 生レスポンス raw）をモーダル内に表示する。 */
+function renderCouponResult(el, data) {
+  if (!el) return;
+  const parts = [];
+  if (data.result === "issued" || data.couponCode) {
+    parts.push(`<div class="ok-msg">✅ 発行成功：<strong class="mono">${esc(data.couponCode || "")}</strong></div>`);
+  }
+  if (data.error || data.result === "failed") {
+    parts.push(`<div class="ne-warn">⚠ 発行失敗：${esc(data.error || "")}</div>`);
+  }
+  if (data.reason && data.result === "skipped") {
+    parts.push(`<div class="muted">スキップ：${esc(data.reason)}</div>`);
+  }
+  if (data.raw !== undefined) {
+    lastCouponRawJson = JSON.stringify(data.raw, null, 2);
+    parts.push(`<div class="muted small">MakeShop 生レスポンス（raw）:
+      <button type="button" class="copy-btn" data-act="coupon-copy-raw">コピー</button></div>`);
+    parts.push(`<pre class="coupon-raw">${esc(lastCouponRawJson)}</pre>`);
+  }
+  el.innerHTML = parts.join("");
 }
 
 /** ネクストエンジンへの手動投入 / 取り込み結果確認（詳細ビュー・単一カード）。 */

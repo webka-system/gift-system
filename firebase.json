@@ -44,6 +44,10 @@
       { "source": "/api/adminUpdateGiftCard", "function": { "functionId": "adminUpdateGiftCard", "region": "asia-northeast1" } },
       { "source": "/api/adminResetGiftCard", "function": { "functionId": "adminResetGiftCard", "region": "asia-northeast1" } },
       { "source": "/api/adminSetCardExpiry", "function": { "functionId": "adminSetCardExpiry", "region": "asia-northeast1" } },
+      { "source": "/api/adminTestIssueCoupon", "function": { "functionId": "adminTestIssueCoupon", "region": "asia-northeast1" } },
+      { "source": "/api/receiveGetCoupon", "function": { "functionId": "receiveGetCoupon", "region": "asia-northeast1" } },
+      { "source": "/api/receiveClaimCoupon", "function": { "functionId": "receiveClaimCoupon", "region": "asia-northeast1" } },
+      { "source": "/gc/**", "destination": "/receive/coupon.html" },
       { "source": "/g/**", "destination": "/receive/index.html" },
       { "source": "/admin/**", "destination": "/admin/index.html" }
     ]

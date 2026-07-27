@@ -64,6 +64,32 @@
           <label><span>有効期限（日数・空欄で無期限）<span class="opt-chip">任意</span></span><input id="type-expiry" type="number" min="1" step="1" placeholder="例: 90" /></label>
           <button id="type-submit" type="submit">種別を登録</button>
         </form>
+
+        <!-- ===== クーポン種別（株主優待 / kind=coupon）===== -->
+        <hr class="section-sep" />
+        <h2>クーポン種別（株主優待）</h2>
+        <p class="muted small">株主優待クーポン用の種別です。割引内容だけを設定します（商品選定・住所入力・NEは使いません）。<strong>会員限定・お一人様1回・対象=全商品</strong>は固定仕様です。有効期限は<strong>QR生成のたびに絶対日付で指定</strong>します（期ごとに期限が変わるため）。</p>
+        <table class="data-table">
+          <thead><tr><th>表示名</th><th>割引</th><th>最低購入額</th><th>状態</th><th></th></tr></thead>
+          <tbody id="coupon-types-tbody"></tbody>
+        </table>
+
+        <h3>クーポン種別の登録 / 編集</h3>
+        <form id="coupon-type-form" class="form-grid">
+          <input id="coupon-type-id" type="hidden" />
+          <label><span>表示名<span class="req-chip">必須</span></span><input id="coupon-type-name" type="text" placeholder="株主優待10%OFF" required /></label>
+          <label><span>割引方式<span class="req-chip">必須</span></span>
+            <select id="coupon-type-discount-type">
+              <option value="rate">割引率（%）</option>
+              <option value="amount">割引額（円）</option>
+            </select>
+          </label>
+          <label><span><span id="coupon-type-value-label">割引率（%）</span><span class="req-chip">必須</span></span><input id="coupon-type-value" type="number" min="1" step="1" placeholder="10" required /></label>
+          <label><span>最低購入額（円・空欄で下限なし）<span class="opt-chip">任意</span></span><input id="coupon-type-min" type="number" min="1" step="1" placeholder="例: 3000" /></label>
+          <p class="muted small wide">固定設定：会員限定＝ON／利用回数＝お一人様1回（UENUCT4）／対象＝全商品。</p>
+          <button id="coupon-type-submit" type="submit">クーポン種別を登録</button>
+          <button id="coupon-type-cancel" type="button" class="ghost" hidden>編集をやめる</button>
+        </form>
       </section>
 
       <!-- 選定可能商品 -->
@@ -104,8 +130,11 @@
         <form id="generate-form" class="form-grid">
           <label><span>種別<span class="req-chip">必須</span></span><select id="generate-type-select"></select></label>
           <label><span>生成個数<span class="req-chip">必須</span></span><input id="generate-count" type="number" min="1" step="1" placeholder="100" required /></label>
+          <!-- クーポン種別を選んだときだけ表示。クーポン＆QRの有効期限（絶対日付・ロット単位 / B案）。 -->
+          <label id="generate-expiry-field" hidden><span>クーポン有効期限（絶対日付）<span class="req-chip">必須</span></span><input id="generate-expiry" type="date" /></label>
           <button id="generate-submit" type="submit">生成する</button>
         </form>
+        <p id="generate-note" class="muted small" hidden>クーポン種別のQRです。ここで指定した有効期限が、QRの受け取り期限と MakeShop クーポンの有効期限の両方になります。</p>
         <p id="generate-result" class="result"></p>
       </section>
 

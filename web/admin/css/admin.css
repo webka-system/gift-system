@@ -405,6 +405,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
 .gallery-thumb.active { border-color: var(--accent); }
 .gallery-empty { padding: 2rem; text-align: center; }
+/* 商品説明は「本文」。入力した改行・空行をそのまま見せる（リスト化はしない）。 */
+.detail-desc { white-space: pre-wrap; overflow-wrap: anywhere; }
 .set-list { margin: 0; padding-left: 1.1rem; }
 .set-list li { margin: .15rem 0; }
 

@@ -125,7 +125,14 @@ h2 { font-size: 1.05rem; margin: 1.75rem 0 .75rem; }
 }
 .product-media img { width: 100%; height: 100%; object-fit: cover; }
 .product-name { font-weight: 600; }
-.product-desc { color: var(--muted); font-size: .9rem; }
+/* 一覧カードの説明は「さわり」だけ。ここだけは改行を詰めて（pre-wrap にしない）2行で打ち切る:
+   pre-wrap だと段落の空行が2行の枠を1行分食ってスカスカのカードになり、高さもバラつくため。
+   入力どおりの改行・空行は「詳細を見る」の .pm-desc 側で全文表示する。 */
+.product-desc {
+  color: var(--muted); font-size: .9rem; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  overflow: hidden;
+}
 /* 「詳細を見る」: カード内のリンク風ボタン（クリックしても選択はしない）。タップしやすい余白に。 */
 .detail-link {
   margin-top: .45rem;
@@ -173,7 +180,8 @@ h2 { font-size: 1.05rem; margin: 1.75rem 0 .75rem; }
 .pm-set h3 { font-size: 1rem; margin: .5rem 0 .3rem; }
 .pm-set ul { margin: 0; padding-left: 1.2rem; }
 .pm-set li { margin: .15rem 0; }
-.pm-desc { color: var(--muted); white-space: pre-wrap; margin: .75rem 0 0; }
+/* 詳細モーダルは全文。入力した改行・空行をそのまま見せる。 */
+.pm-desc { color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; margin: .75rem 0 0; }
 .product-modal .primary { margin-top: 1.25rem; }
 
 /* 住所フォーム */

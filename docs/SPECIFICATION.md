@@ -273,7 +273,7 @@ erDiagram
 | （ドキュメントID） | string | — | 商品ID |
 | `cardTypeId` | string | ✓ | 所属する種別ID。**同じ商品が複数の価格帯にまたがることはない**ため、種別への単純な参照でよい（多対多は不要） |
 | `name` | string | ✓ | 商品名 |
-| `description` | string | ✓ | 商品説明 |
+| `description` | string | ✓ | 商品説明（本文）。**改行はそのまま保持**し、表示側は CSS `white-space: pre-wrap` で活かす（`<br>` への置換はしない）。保存時に CRLF→LF 統一・行末空白と前後の空行の除去のみ行い、途中の空行（段落分け）は残す。受け取り者の一覧カードだけは2行で `line-clamp`（全文は商品詳細モーダル） |
 | `imageUrl` | string | ✓ | メイン画像URL（Storage） |
 | `additionalImages` | string[] | 任意 | 追加画像URL（最大 `PRODUCT.MAX_ADDITIONAL_IMAGES=4` 枚。メインと合わせて最大5枚）。**後方互換**：無い既存商品は `[]` 扱い |
 | `setContents` | string | 任意 | セット内容（改行区切り＝1行1項目）。説明文とは独立。**後方互換**：無ければ `""` |

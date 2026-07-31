@@ -680,6 +680,20 @@ $("#products-tbody").addEventListener("click", async (e) => {
   }
 });
 
+/**
+ * 商品説明を保存前に軽く正規化する（本文なので行の中身は触らない）。
+ * - CRLF / CR → LF に統一
+ * - 各行の行末の空白だけを落とす
+ * - 先頭・末尾の空行を落とす（途中の空行＝段落分けはそのまま残す）
+ */
+function normalizeDescription(text) {
+  const lines = String(text ?? "").replace(/\r\n?/g, "\n").split("\n")
+    .map((s) => s.replace(/\s+$/, ""));
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return lines.join("\n");
+}
+
 async function onProductSubmit(e) {
   e.preventDefault();
   const cardTypeId = $("#product-type-select").value;
@@ -700,7 +714,8 @@ async function onProductSubmit(e) {
   submitBtn.textContent = "保存中…";
   try {
     const file = $("#product-image").files[0];
-    const description = $("#product-desc").value.trim();
+    // 商品説明: 改行は表示にそのまま活かすので、正規化だけして残す（途中の空行も維持）。
+    const description = normalizeDescription($("#product-desc").value);
     // セット内容: 1行=1項目。前後空白を落とし、空行を除いて改行区切りで保存。
     const setContents = $("#product-set").value
       .split(/\r?\n/).map((s) => s.trim()).filter(Boolean).join("\n");
@@ -804,7 +819,7 @@ function openProductDetail(id) {
     <section class="detail-section">${galleryHtml(images)}</section>
     <section class="detail-section">
       <h3>${esc(p.name)}</h3>
-      ${p.description ? `<p>${esc(p.description)}</p>` : `<p class="muted">説明はありません。</p>`}
+      ${p.description ? `<p class="detail-desc">${esc(p.description)}</p>` : `<p class="muted">説明はありません。</p>`}
     </section>
     <section class="detail-section">
       <h3>セット内容</h3>
@@ -1185,7 +1200,7 @@ async function openCardDetail(cardId) {
          ${product?.imageUrl ? `<img class="thumb-lg" src="${esc(product.imageUrl)}" alt="">` : ""}
          <div>
            <div class="detail-value">${esc(product?.name || "（商品情報を取得できませんでした）")}</div>
-           <div class="muted small">${esc(product?.description || "")}</div>
+           <div class="muted small detail-desc">${esc(product?.description || "")}</div>
            <div class="muted small">NE商品コード: ${esc(product?.neProductCode || "")}</div>
            <div class="muted small mono">productId: ${esc(card.selectedProductId)}</div>
          </div>
